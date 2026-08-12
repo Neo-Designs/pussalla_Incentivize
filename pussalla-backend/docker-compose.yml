@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  db:
+    image: postgres:16
+    container_name: pussalla-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pussalla
+      POSTGRES_USER: pussalla_app
+      POSTGRES_PASSWORD: change_me
+    ports:
+      - "5432:5432"
+    volumes:
+      - pussalla_pgdata:/var/lib/postgresql/data
+
+volumes:
+  pussalla_pgdata:
