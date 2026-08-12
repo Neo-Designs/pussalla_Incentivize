@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useToast } from "../context/ToastContext";
 import Card, { PageHead, KPI, EmptyState, Badge, SkeletonRows } from "../components/Card.jsx";
 import Modal from "../components/Modal.jsx";
@@ -108,7 +108,8 @@ export default function CrossAssignmentsPage() {
 
 function AssignModal({ divisions, employees, onSaved, onClose }) {
   const toast = useToast();
-  const [employeeId, setEmployeeId] = useState("");
+  const [fromDivisionId, setFromDivisionId] = useState("");
+  const [selectedIds, setSelectedIds] = useState([]);
   const [toDivisionId, setToDivisionId] = useState("");
   const [assignmentDate, setAssignmentDate] = useState(todayISO());
   const [shift, setShift] = useState("Morning");
@@ -117,12 +118,35 @@ function AssignModal({ divisions, employees, onSaved, onClose }) {
 
   const SHIFTS = ["Morning", "Evening", "Night"];
 
+  // Step 2 — employees whose home division is the chosen "from" department.
+  const divisionEmployees = useMemo(
+    () => employees.filter((e) => e.active !== false && Number(e.home_division_id) === Number(fromDivisionId)),
+    [employees, fromDivisionId]
+  );
+
+  const divName = (id) => divisions.find((d) => d.id === Number(id))?.name || "";
+
+  const toggle = (id) => {
+    const v = Number(id);
+    setSelectedIds((arr) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]));
+  };
+  const selectAll = () => setSelectedIds(divisionEmployees.map((e) => e.id));
+  const clearAll = () => setSelectedIds([]);
+
   const submit = async () => {
-    if (!employeeId || !toDivisionId || !assignmentDate || !shift) { toast.error("Employee, destination division, date and shift are required"); return; }
+    if (!fromDivisionId) { toast.error("Choose the home department first"); return; }
+    if (!selectedIds.length) { toast.error("Select at least one employee to cross-assign"); return; }
+    if (!toDivisionId) { toast.error("Choose the new department"); return; }
+    if (Number(toDivisionId) === Number(fromDivisionId)) { toast.error("New department must differ from the home department"); return; }
+    if (!assignmentDate || !shift) { toast.error("Date and shift are required"); return; }
     setSaving(true);
     try {
-      await crossApi.create({ employeeId: Number(employeeId), toDivisionId: Number(toDivisionId), assignmentDate, shift, note });
-      toast.success("Assignment created");
+      await Promise.all(
+        selectedIds.map((empId) =>
+          crossApi.create({ employeeId: Number(empId), toDivisionId: Number(toDivisionId), assignmentDate, shift, note })
+        )
+      );
+      toast.success(`Cross-assigned ${selectedIds.length} employee(s) to ${divName(toDivisionId)}`);
       onSaved();
     } catch (e) { toast.error(e.message); } finally { setSaving(false); }
   };
@@ -138,41 +162,95 @@ function AssignModal({ divisions, employees, onSaved, onClose }) {
         </>
       }
     >
-      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-        <div style={{ gridColumn: "1 / -1" }}>
-          <label>Employee</label>
-          <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-            <option value="">Select…</option>
-            {employees.filter((e) => e.active !== false).map((emp) => (
-              <option key={emp.id} value={emp.id}>{emp.code} · {emp.name}</option>
+      {/* Step 1 — home department */}
+      <div className="step-label">Step 1 · Home department</div>
+      <label>Choose the employee's home department</label>
+      <select value={fromDivisionId} onChange={(e) => { setFromDivisionId(e.target.value); setSelectedIds([]); }}>
+        <option value="">Select department…</option>
+        {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+      </select>
+
+      {/* Step 2 — employees in that department */}
+      {fromDivisionId && (
+        <div style={{ marginTop: "1rem" }}>
+          <div className="step-label">Step 2 · Select employees to cross-assign</div>
+          {divisionEmployees.length === 0 ? (
+            <div className="empty" style={{ padding: "1.2rem" }}>
+              <div className="big">🪹</div>
+              <strong>No active employees in {divName(fromDivisionId)}</strong>
+              <p className="muted">Pick a different home department.</p>
+            </div>
+          ) : (
+            <>
+              <div className="spread" style={{ marginBottom: "0.5rem" }}>
+                <span className="muted" style={{ fontSize: "0.82rem" }}>{selectedIds.length} of {divisionEmployees.length} selected</span>
+                <div className="row" style={{ gap: "0.4rem" }}>
+                  <button className="btn btn-ghost btn-sm" onClick={selectAll}>Select all</button>
+                  <button className="btn btn-ghost btn-sm" onClick={clearAll} disabled={!selectedIds.length}>Clear</button>
+                </div>
+              </div>
+              <div className="pick-list">
+                {divisionEmployees.map((emp) => {
+                  const on = selectedIds.includes(emp.id);
+                  return (
+                    <label key={emp.id} className={`pick-row ${on ? "on" : ""}`}>
+                      <input type="checkbox" checked={on} onChange={() => toggle(emp.id)} />
+                      <span className="badge tag-green" style={{ fontWeight: 700 }}>{initials(emp.name)}</span>
+                      <span className="pick-name">{emp.name}</span>
+                      <span className="muted mono" style={{ fontSize: "0.78rem" }}>{emp.code}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Step 3 — new department */}
+      {selectedIds.length > 0 && (
+        <div style={{ marginTop: "1rem" }}>
+          <div className="step-label">Step 3 · New department</div>
+          <label>Reassign selected employee(s) to</label>
+          <select value={toDivisionId} onChange={(e) => setToDivisionId(e.target.value)}>
+            <option value="">Select new department…</option>
+            {divisions.filter((d) => Number(d.id) !== Number(fromDivisionId)).map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
             ))}
           </select>
         </div>
-        <div>
-          <label>Reassign to division</label>
-          <select value={toDivisionId} onChange={(e) => setToDivisionId(e.target.value)}>
-            <option value="">Select…</option>
-            {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+      )}
+
+      {/* Step 4 — schedule + note */}
+      {toDivisionId && (
+        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginTop: "1rem" }}>
+          <div>
+            <label>Assignment date</label>
+            <input type="date" value={assignmentDate} onChange={(e) => setAssignmentDate(e.target.value)} />
+          </div>
+          <div>
+            <label>Shift</label>
+            <select value={shift} onChange={(e) => setShift(e.target.value)}>
+              {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label>Note (optional)</label>
+            <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason for reassignment…" />
+          </div>
         </div>
-        <div>
-          <label>Assignment date</label>
-          <input type="date" value={assignmentDate} onChange={(e) => setAssignmentDate(e.target.value)} />
+      )}
+
+      {toDivisionId && (
+        <div className="card" style={{ marginTop: "0.9rem", background: "var(--pussalla-green-050)", border: "1px solid var(--pussalla-green-100)" }}>
+          <div className="muted" style={{ fontSize: "0.85rem" }}>
+            <strong>{selectedIds.length}</strong> employee(s) move from{" "}
+            <strong>{divName(fromDivisionId)}</strong> →{" "}
+            <strong style={{ color: "var(--pussalla-green-700)" }}>{divName(toDivisionId)}</strong> on{" "}
+            {assignmentDate} ({shift}). They will appear in {divName(toDivisionId)}'s daily-log roster that day.
+          </div>
         </div>
-        <div>
-          <label>Shift</label>
-          <select value={shift} onChange={(e) => setShift(e.target.value)}>
-            {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <div style={{ gridColumn: "1 / -1" }}>
-          <label>Note (optional)</label>
-          <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason for reassignment…" />
-        </div>
-      </div>
-      <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.8rem" }}>
-        The employee's home division is recorded automatically as the "from" division.
-      </p>
+      )}
     </Modal>
   );
 }

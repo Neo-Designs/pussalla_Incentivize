@@ -37,8 +37,8 @@
 .sidebar::before {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background:
-    radial-gradient(420px 200px at 100% 0%, rgba(255, 179, 0, 0.16), transparent 70%),
-    radial-gradient(360px 300px at 0% 100%, rgba(102, 187, 106, 0.16), transparent 70%);
+    radial-gradient(420px 200px at 100% 0%, rgba(196, 24, 24, 0.22), transparent 70%),
+    radial-gradient(360px 300px at 0% 100%, rgba(89, 7, 7, 0.4), transparent 70%);
 }
 .sidebar .brand { padding: 1.2rem 1.3rem; border-bottom: 1px solid rgba(255,255,255,0.08); position: relative; }
 .sidebar .brand .mark {
@@ -129,7 +129,7 @@
 /* ---------- Modal ---------- */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 1000;
-  background: rgba(12, 33, 18, 0.55);
+  background: rgba(4, 9, 12, 0.55);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: grid; place-items: center;
@@ -190,14 +190,14 @@
 .login-hero::before {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background:
-    radial-gradient(500px 260px at 100% 0%, rgba(255, 179, 0, 0.2), transparent 70%),
-    radial-gradient(440px 320px at 0% 100%, rgba(102, 187, 106, 0.18), transparent 70%);
+    radial-gradient(500px 260px at 100% 0%, rgba(196, 24, 24, 0.28), transparent 70%),
+    radial-gradient(440px 320px at 0% 100%, rgba(89, 7, 7, 0.45), transparent 70%);
 }
 .login-hero::after {
   content: ""; position: absolute; right: -120px; bottom: -120px;
   width: 400px; height: 400px; border-radius: 50%;
   background: radial-gradient(circle, var(--pussalla-gold-500), transparent 70%);
-  opacity: 0.32;
+  opacity: 0.3;
   animation: ps-float 8s ease-in-out infinite;
 }
 @keyframes ps-float { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-20px, -20px); } }
@@ -232,6 +232,34 @@
   border-radius: 999px;
   transition: width 0.7s var(--ease-out);
 }
+/* Static variant — no grow/loop animation (used for the leaderboard). */
+.bar-fill-static { transition: none; }
+
+/* ---------- Cross-assignment stepper ---------- */
+.step-label {
+  font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--pussalla-green-700); margin-bottom: 0.5rem;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+}
+.step-label::before {
+  content: ""; width: 22px; height: 2px; border-radius: 999px; background: var(--pussalla-green-600);
+}
+.pick-list {
+  max-height: 240px; overflow-y: auto;
+  border: 1px solid var(--ink-100); border-radius: var(--radius-sm); padding: 0.4rem;
+  background: var(--surface-2);
+  display: flex; flex-direction: column; gap: 0.3rem;
+}
+.pick-row {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.55rem 0.6rem; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--ink-100);
+  cursor: pointer; transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.pick-row input { width: auto; }
+.pick-row:hover { background: var(--pussalla-green-050); border-color: var(--pussalla-green-300); }
+.pick-row.on { background: var(--pussalla-green-050); border-color: var(--pussalla-green-600); }
+.pick-name { font-weight: 600; flex: 1; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 880px) {

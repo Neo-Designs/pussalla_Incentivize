@@ -141,13 +141,8 @@ export default function ReportsPage() {
                           <span><strong>{i + 1}.</strong> {e.name}</span>
                           <span className="money"><strong>{formatMoney(e.total)}</strong></span>
                         </div>
-                        <div className="ps-bar" style={{ marginTop: "0.25rem", height: 7, background: "var(--ink-100)" }}>
-                          <div style={{
-                            position: "absolute", left: 0, top: 0, bottom: 0,
-                            width: `${(e.total / max) * 100}%`,
-                            background: "linear-gradient(90deg, var(--pussalla-green-500), var(--pussalla-gold-400))",
-                            borderRadius: 999,
-                          }} />
+                        <div className="bar-track" style={{ marginTop: "0.3rem" }}>
+                          <div className="bar-fill bar-fill-static" style={{ width: `${(e.total / max) * 100}%` }} />
                         </div>
                       </div>
                     );

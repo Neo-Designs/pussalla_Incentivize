@@ -4,7 +4,7 @@ import { useToast } from "../context/ToastContext";
 import Card, { PageHead, KPI, EmptyState, Badge, SkeletonRows } from "../components/Card.jsx";
 import Modal, { ConfirmDialog } from "../components/Modal.jsx";
 import { MiniSpinner } from "../components/Loaders.jsx";
-import { dailyLogsApi, tasksApi, employeesApi, divisionsApi } from "../api/client";
+import { dailyLogsApi, tasksApi, employeesApi, divisionsApi, crossApi } from "../api/client";
 import {
   formatMoney, formatNumber, formatDate, taskTypeLabel, calcEngine,
   todayISO, initials, hasRole,
@@ -16,6 +16,7 @@ export default function DailyLogsPage() {
   const [divisions, setDivisions] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [crossEmployeeIds, setCrossEmployeeIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState(todayISO());
   const [filterDiv, setFilterDiv] = useState(user.homeDivisionId || "");
@@ -31,14 +32,21 @@ export default function DailyLogsPage() {
       const params = {};
       if (filterDate) params.date = filterDate;
       if (filterDiv) params.divisionId = filterDiv;
-      const [divs, emps, rows] = await Promise.all([
+      // Cross-assignments INTO the filtered division on the filtered date tell
+      // us which employees are temporarily rostered there that day.
+      const crossParams = {};
+      if (filterDate) crossParams.date = filterDate;
+      if (filterDiv) crossParams.toDivisionId = filterDiv;
+      const [divs, emps, rows, cross] = await Promise.all([
         divisionsApi.list().catch(() => []),
         employeesApi.list().catch(() => []),
         dailyLogsApi.list(params).catch(() => []),
+        crossApi.list(crossParams).catch(() => []),
       ]);
       setDivisions(divs);
       setEmployees(emps);
       setLogs(rows);
+      setCrossEmployeeIds(Array.from(new Set(cross.map((c) => Number(c.employee_id)))));
     } finally {
       setLoading(false);
     }
@@ -132,6 +140,7 @@ export default function DailyLogsPage() {
         <LogEntryModal
           divisions={divisions}
           employees={employees}
+          crossEmployeeIds={crossEmployeeIds}
           editTarget={editTarget}
           defaultDivisionId={user.homeDivisionId}
           onSaved={handleSaved}
@@ -160,7 +169,7 @@ export default function DailyLogsPage() {
   );
 }
 
-function LogEntryModal({ divisions, employees, editTarget, defaultDivisionId, onSaved, onClose }) {
+function LogEntryModal({ divisions, employees, crossEmployeeIds, editTarget, defaultDivisionId, onSaved, onClose }) {
   const toast = useToast();
   const [date, setDate] = useState(editTarget?.log_date || todayISO());
   const [divisionId, setDivisionId] = useState(editTarget?.division_id || defaultDivisionId || "");
@@ -232,8 +241,13 @@ function LogEntryModal({ divisions, employees, editTarget, defaultDivisionId, on
   }, [selectedTask, isType1, entries, totalOutput, participantIds]);
 
   const validEmployees = useMemo(
-    () => employees.filter((e) => e.active !== false && (!divisionId || e.home_division_id === Number(divisionId))),
-    [employees, divisionId]
+    () => employees.filter(
+      (e) => e.active !== false && (
+        (!divisionId || Number(e.home_division_id) === Number(divisionId)) ||
+        crossEmployeeIds.includes(Number(e.id))
+      )
+    ),
+    [employees, divisionId, crossEmployeeIds]
   );
 
   const setEntry = (i, field, value) => {
@@ -375,7 +389,10 @@ function LogEntryModal({ divisions, employees, editTarget, defaultDivisionId, on
               <div>
                 <select value={en.employeeId} onChange={(e) => setEntry(i, "employeeId", e.target.value)}>
                   <option value="">Select employee…</option>
-                  {validEmployees.map((emp) => <option key={emp.id} value={emp.id}>{emp.code} · {emp.name}</option>)}
+                  {validEmployees.map((emp) => {
+                    const isCross = crossEmployeeIds.includes(Number(emp.id)) && Number(emp.home_division_id) !== Number(divisionId);
+                    return <option key={emp.id} value={emp.id}>{emp.code} · {emp.name}{isCross ? " (cross-assigned)" : ""}</option>;
+                  })}
                 </select>
               </div>
               <div>
@@ -402,12 +419,18 @@ function LogEntryModal({ divisions, employees, editTarget, defaultDivisionId, on
                   <span className="muted">No employees in this division.</span>
                 ) : (
                   <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "0.3rem" }}>
-                    {validEmployees.map((emp) => (
-                      <label key={emp.id} className="row" style={{ fontSize: "0.85rem", cursor: "pointer", gap: "0.4rem" }}>
-                        <input type="checkbox" checked={participantIds.includes(emp.id)} onChange={() => toggleParticipant(emp.id)} style={{ width: "auto" }} />
-                        <span>{emp.name} <span className="muted">{emp.code}</span></span>
-                      </label>
-                    ))}
+                    {validEmployees.map((emp) => {
+                      const isCross = crossEmployeeIds.includes(Number(emp.id)) && Number(emp.home_division_id) !== Number(divisionId);
+                      return (
+                        <label key={emp.id} className="row" style={{ fontSize: "0.85rem", cursor: "pointer", gap: "0.4rem" }}>
+                          <input type="checkbox" checked={participantIds.includes(emp.id)} onChange={() => toggleParticipant(emp.id)} style={{ width: "auto" }} />
+                          <span>
+                            {emp.name} <span className="muted">{emp.code}</span>
+                            {isCross && <Badge tone="gold" style={{ marginLeft: "0.3rem", fontSize: "0.66rem" }}>cross</Badge>}
+                          </span>
+                        </label>
+                      );
+                    })}
                   </div>
                 )}
               </div>
