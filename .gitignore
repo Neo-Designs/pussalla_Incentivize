@@ -1,14 +1,20 @@
 # Dependencies
 **/node_modules/
 
-# Build output
+# Build output (the committed pussalla-backend/public/ copy is the deploy artifact — do NOT ignore it)
 pussalla-frontend/dist/
 pussalla-frontend/.vite/
 
-# Environment & secrets
+# Environment & secrets (NEVER commit real credentials)
 .env
-.env.local
+pussalla-backend/.env
+*.env
 *.local
+
+# Test/dev tooling artifacts
+pussalla-backend/pythagora-core/
+.agents_tmp/
+.agents/
 
 # OS / editor
 .DS_Store

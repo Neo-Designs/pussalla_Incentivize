@@ -223,35 +223,55 @@ All design tokens live in `pussalla-frontend/src/styles/theme.css` (`:root` cust
 
 ## 🏗️ Production Build & Deployment
 
-### One-command Docker stack (recommended)
+The backend builds and serves the React frontend from the **same origin**, so
+production is a single web service — no separate static site to configure.
 
-The repo ships with a production `Dockerfile` and `docker-compose.prod.yml`
-that build the React frontend and run the backend + Postgres in a single
-container stack — no separate frontend host needed.
+### Deploy to Render (recommended, zero build/start command entry)
+
+Build and start commands are encoded in `render.yaml` + the root `package.json`,
+so you don't type anything into Render's UI. See
+**`docs/RENDER_DEPLOY.md`** for the full step-by-step (Blueprint or manual).
+
+Quick version:
+```bash
+# 1. Apply schema + seed against your Postgres (Render/Neon/Supabase)
+cd pussalla-backend && cp .env.example .env   # set DATABASE_URL + JWT_SECRET
+npm install && npm run seed
+
+# 2. On Render: New → Blueprint (reads render.yaml), or New → Web Service with:
+#    Build:  npm install && npm run build
+#    Start:  npm start
+#    Env:    DATABASE_URL, JWT_SECRET, JWT_EXPIRES_IN, CORS_ORIGIN (leave empty)
+```
+
+### How the single-origin deploy works
+
+The built frontend is committed inside `pussalla-backend/public/` (never
+gitignored), so it is always present at runtime. A `postinstall` hook rebuilds
+it when the frontend source is checked out. `app.js` serves `public/` with an
+SPA fallback for client-side routes, and serves `/api/*` from Express — all on
+one port.
+
+### Docker stack
 
 ```bash
-cp pussalla-backend/.env.example .env   # then edit JWT_SECRET / PGPASSWORD / CORS_ORIGIN
+cp pussalla-backend/.env.example .env   # edit JWT_SECRET / PGPASSWORD
 docker compose -f docker-compose.prod.yml --env-file .env up --build -d
 docker compose exec app npm run seed    # load demo data (first run only)
 ```
-
-Open **http://localhost:4000**. The backend serves the built SPA from the
-same origin, so no CORS configuration is needed when `SERVE_FRONTEND=true`.
-
-> For a new customer database (Neon / Supabase / self-hosted), see
-> **`docs/CUSTOMER_DATABASE_SETUP.md`**.
+Open **http://localhost:4000**.
 
 ### Static frontend build only
 
-To produce a static production bundle of the frontend:
-
 ```bash
-cd pussalla-frontend
-npm run build        # outputs to dist/
-npm run preview      # serve the production build locally
+cd pussalla-frontend && npm run build   # outputs to dist/
 ```
+The built `dist/` can be served by any static host (set `CORS_ORIGIN` to its
+URL). Because the frontend calls relative `/api` paths, it resolves to the
+same origin in production.
 
-The built `dist/` can be served by any static host, or placed behind the Express backend / nginx. Because the frontend calls relative `/api` paths, it resolves to the same origin in production.
+> For a new customer database (Neon / Supabase / self-hosted), see
+> **`docs/CUSTOMER_DATABASE_SETUP.md`**.
 
 ---
 
