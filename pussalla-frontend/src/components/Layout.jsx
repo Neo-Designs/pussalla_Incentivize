@@ -7,14 +7,14 @@ import { roleLabel, initials } from "../utils/helpers";
 
 // Nav item definitions gated by role. super_admin sees everything.
 const NAV = [
-  { to: "/", label: "Dashboard", icon: "📊", roles: ["employee", "supervisor", "hr", "admin", "super_admin"] },
-  { to: "/earnings", label: "My Earnings", icon: "💰", roles: ["employee"] },
-  { to: "/daily-logs", label: "Daily Logs", icon: "📝", roles: ["supervisor", "super_admin"] },
-  { to: "/tasks", label: "Task Management", icon: "⚙️", roles: ["admin", "super_admin"] },
-  { to: "/employees", label: "Employees", icon: "👥", roles: ["hr", "admin", "super_admin"] },
-  { to: "/cross-assignments", label: "Cross-Assignments", icon: "🔀", roles: ["hr", "super_admin"] },
-  { to: "/reports", label: "Reports", icon: "📈", roles: ["hr", "admin", "super_admin"] },
-  { to: "/audit", label: "Audit Trail", icon: "🛡️", roles: ["super_admin"] },
+  { to: "/", label: "Dashboard", roles: ["employee", "supervisor", "hr", "admin", "super_admin"] },
+  { to: "/earnings", label: "My Earnings", roles: ["employee"] },
+  { to: "/daily-logs", label: "Daily Logs", roles: ["supervisor", "super_admin"] },
+  { to: "/tasks", label: "Task Management", roles: ["admin", "super_admin"] },
+  { to: "/employees", label: "Employees", roles: ["hr", "admin", "super_admin"] },
+  { to: "/cross-assignments", label: "Cross-Assignments", roles: ["hr", "super_admin"] },
+  { to: "/reports", label: "Reports", roles: ["hr", "admin", "super_admin"] },
+  { to: "/audit", label: "Audit Trail", roles: ["super_admin"] },
 ];
 
 function navGroups(user) {
