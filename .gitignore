@@ -1,9 +1,8 @@
 # Dependencies
 **/node_modules/
 
-# Build output (the committed pussalla-backend/public/ copy is the deploy artifact — do NOT ignore it)
-pussalla-frontend/dist/
-pussalla-frontend/.vite/
+# Build output (kept in git so the frontend bundle is always available;
+# pussalla-backend/public/ is the deploy artifact served by the backend)
 
 # Environment & secrets (NEVER commit real credentials)
 .env
