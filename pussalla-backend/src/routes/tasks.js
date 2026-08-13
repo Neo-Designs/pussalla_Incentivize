@@ -2,15 +2,29 @@ const express = require("express");
 const { pool } = require("../db");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { writeAudit } = require("../utils/audit");
+const { parsePagination } = require("../utils/pagination");
 
 const router = express.Router();
 
+// GET /api/tasks?divisionId=1&page=1&limit=50&active=true
 router.get("/", requireAuth, async (req, res) => {
-  const { divisionId } = req.query;
-  const { rows } = divisionId
-    ? await pool.query("SELECT * FROM tasks WHERE division_id=$1 AND active=true ORDER BY id", [divisionId])
-    : await pool.query("SELECT * FROM tasks WHERE active=true ORDER BY id");
-  res.json(rows);
+  const { page, limit, offset } = parsePagination(req);
+  const { divisionId, active } = req.query;
+  const clauses = [];
+  const params = [];
+  if (divisionId) { params.push(divisionId); clauses.push(`division_id = $${params.length}`); }
+  if (active === "true" || active === undefined) clauses.push(`active = true`);
+  if (active === "false") clauses.push(`active = false`);
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+
+  const [{ rows }, { rows: countRows }] = await Promise.all([
+    pool.query(
+      `SELECT * FROM tasks ${where} ORDER BY id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
+    ),
+    pool.query(`SELECT COUNT(*)::int AS total FROM tasks ${where}`, params),
+  ]);
+  res.json({ rows, page, limit, total: countRows[0].total });
 });
 
 router.post("/", requireAuth, requireRole("admin"), async (req, res) => {

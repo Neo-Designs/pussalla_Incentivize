@@ -11,6 +11,7 @@ export default function DashboardPage() {
   const [todayLogs, setTodayLogs] = useState([]);
   const [monthReport, setMonthReport] = useState(null);
   const [todayReport, setTodayReport] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
   const [audit, setAudit] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,6 +34,9 @@ export default function DashboardPage() {
             reportsApi.monthly(currentMonthISO()).then(setMonthReport).catch(() => setMonthReport(null)),
             reportsApi.daily(todayISO()).then(setTodayReport).catch(() => setTodayReport(null)),
           );
+        }
+        if (hasRole(user, "admin", "super_admin")) {
+          promises.push(reportsApi.analytics().then(setAnalytics).catch(() => setAnalytics(null)));
         }
         if (user.role === "super_admin") {
           promises.push(auditApi.list({ flagged: "true" }).then(setAudit).catch(() => setAudit([])));
@@ -152,8 +156,24 @@ export default function DashboardPage() {
                 <KPI tone="green" label="Today's Payout" value={todayReport ? formatMoney(todayReport.grandTotal) : "—"} sub={todayReport ? `${todayReport.rows.length} earners` : "no data"} />
                 <KPI tone="gold" label={`This Month (${currentMonthISO()})`} value={monthReport ? formatMoney(monthReport.grandTotal) : "—"} sub={monthReport ? `${monthReport.employees.length} employees` : "no data"} />
                 <KPI tone="blue" label="Divisions" value={divisions.length} sub="operational" />
+                {analytics && <KPI tone="blue" label="Active Employees" value={analytics.activeEmployees} sub={`${analytics.activeTasks} active tasks`} />}
+                {analytics && <KPI tone="gold" label="Total Payout (all-time)" value={formatMoney(analytics.totalPayout)} sub={`${analytics.totalLogs} logs`} />}
                 {user.role === "super_admin" && <KPI tone="red" label="Flagged Edits" value={audit.length} sub="retroactive changes" />}
               </div>
+
+              {analytics && analytics.divisions.length > 0 && (
+                <Card className="rise" style={{ marginBottom: "1rem" }}>
+                  <h3 className="section-title">Payout by division</h3>
+                  <DivisionBars divisions={analytics.divisions} />
+                </Card>
+              )}
+
+              {analytics && analytics.dailyTrend.length > 1 && (
+                <Card className="rise" style={{ marginBottom: "1rem" }}>
+                  <h3 className="section-title">Daily payout trend</h3>
+                  <TrendChart trend={analytics.dailyTrend} />
+                </Card>
+              )}
 
               <div className="grid stagger" style={{ gridTemplateColumns: "1.4fr 1fr" }}>
                 <Card>
@@ -238,5 +258,48 @@ export default function DashboardPage() {
         </>
       )}
     </>
+  );
+}
+
+// Simple hand-rolled SVG bar chart for division payouts (no chart library).
+function DivisionBars({ divisions }) {
+  const max = Math.max(...divisions.map((d) => d.total), 1);
+  return (
+    <div>
+      {divisions.map((d) => (
+        <div key={d.id} style={{ marginBottom: "0.7rem" }}>
+          <div className="spread" style={{ fontSize: "0.85rem" }}>
+            <span>{d.name} <span className="muted">· {d.logCount} logs</span></span>
+            <span className="money"><strong>{formatMoney(d.total)}</strong></span>
+          </div>
+          <div className="bar-track" style={{ marginTop: "0.3rem" }}>
+            <div className="bar-fill bar-fill-static" style={{ width: `${(d.total / max) * 100}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Hand-rolled SVG line/bars for the daily payout trend.
+function TrendChart({ trend }) {
+  const w = 640;
+  const h = 160;
+  const pad = 28;
+  const data = trend.slice(-30); // last 30 days
+  const max = Math.max(...data.map((d) => d.total), 1);
+  const stepX = (w - pad * 2) / Math.max(data.length - 1, 1);
+  const x = (i) => pad + i * stepX;
+  const y = (v) => h - pad - (v / max) * (h - pad * 2);
+  const points = data.map((d, i) => `${x(i)},${y(d.total)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Daily payout trend">
+      <line x1={pad} y1={h - pad} x2={w - pad} y2={h - pad} stroke="var(--ink-100)" />
+      <line x1={pad} y1={pad} x2={pad} y2={h - pad} stroke="var(--ink-100)" />
+      <polyline points={points} fill="none" stroke="var(--pussalla-green-600)" strokeWidth="2" />
+      {data.map((d, i) => (
+        <circle key={i} cx={x(i)} cy={y(d.total)} r="2.5" fill="var(--pussalla-green-600)" />
+      ))}
+    </svg>
   );
 }

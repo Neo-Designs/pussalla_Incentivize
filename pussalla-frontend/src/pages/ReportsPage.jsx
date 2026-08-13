@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import Card, { PageHead, KPI, EmptyState, Badge, SkeletonRows } from "../components/Card.jsx";
-import { reportsApi } from "../api/client";
-import { formatMoney, formatDate, todayISO, currentMonthISO, downloadCsv } from "../utils/helpers";
+import { reportsApi, downloadBlob } from "../api/client";
+import { formatMoney, formatDate, todayISO, currentMonthISO } from "../utils/helpers";
 
 export default function ReportsPage() {
   const { user } = useAuth();
@@ -12,6 +12,7 @@ export default function ReportsPage() {
   const [daily, setDaily] = useState(null);
   const [monthly, setMonthly] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [payslipLoading, setPayslipLoading] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -34,33 +35,37 @@ export default function ReportsPage() {
     return () => { active = false; };
   }, [tab, month, day]);
 
-  const exportDailyCsv = () => {
-    if (!daily) return;
-    const rows = [["Employee Code", "Name", "Division", "Tasks Completed", "Daily Total"]];
-    daily.rows.forEach((r) => rows.push([r.code, r.name, r.division_name || "", r.tasks_completed, Number(r.daily_total).toFixed(2)]));
-    rows.push([]);
-    rows.push(["", "", "", "GRAND TOTAL", daily.grandTotal.toFixed(2)]);
-    downloadCsv(`pussalla-daily-${daily.date}.csv`, rows);
+  const exportDailyCsv = async () => {
+    const blob = await reportsApi.exportDailyCsv(day);
+    downloadBlob(blob, `pussalla-daily-${day}.csv`);
   };
 
-  const exportMonthlyCsv = () => {
-    if (!monthly) return;
-    const rows = [["Employee Code", "Name", "Division", "Date", "Task", "Amount"]];
-    monthly.employees.forEach((e) => {
-      e.items.forEach((it) => rows.push([e.code, e.name, e.divisionName || "", it.date, it.task, it.amount.toFixed(2)]));
-    });
-    rows.push([]);
-    monthly.employees.forEach((e) => rows.push([e.code, e.name, e.divisionName || "", "", "TOTAL", e.total.toFixed(2)]));
-    rows.push([]);
-    rows.push(["", "", "", "", "GRAND TOTAL", monthly.grandTotal.toFixed(2)]);
-    downloadCsv(`pussalla-monthly-${monthly.month}.csv`, rows);
+  const exportMonthlyCsv = async () => {
+    const blob = await reportsApi.exportMonthlyCsv(month);
+    downloadBlob(blob, `pussalla-monthly-${month}.csv`);
+  };
+
+  const exportMonthlyExcel = async () => {
+    // Excel opens CSV natively; reuse the CSV with an .xls-friendly name.
+    const blob = await reportsApi.exportMonthlyCsv(month);
+    downloadBlob(blob, `pussalla-monthly-${month}.xls`);
+  };
+
+  const downloadPayslip = async (employeeId, code) => {
+    setPayslipLoading(employeeId);
+    try {
+      const blob = await reportsApi.payslipPdf(employeeId, month);
+      downloadBlob(blob, `payslip-${code}-${month}.pdf`);
+    } finally {
+      setPayslipLoading(null);
+    }
   };
 
   return (
     <>
       <PageHead
         title="Incentive Reports"
-        subtitle="Daily and monthly incentive payouts across the workforce."
+        subtitle="Daily and monthly incentive payouts across the workforce. Export to CSV for PBSS payroll / Excel, or download a PDF payslip per employee."
         actions={
           <>
             <div className="row" style={{ background: "var(--surface)", borderRadius: 999, padding: "0.25rem", border: "1px solid var(--ink-100)" }}>
@@ -75,6 +80,9 @@ export default function ReportsPage() {
             <button className="btn btn-gold btn-sm" onClick={tab === "daily" ? exportDailyCsv : exportMonthlyCsv} disabled={loading}>
               ↓ Export CSV
             </button>
+            {tab === "monthly" && (
+              <button className="btn btn-sm" onClick={exportMonthlyExcel} disabled={loading}>↓ Excel</button>
+            )}
           </>
         }
       />
@@ -159,14 +167,23 @@ export default function ReportsPage() {
                 <EmptyState title="No data for this month" />
               ) : (
                 <table className="data">
-                  <thead><tr><th>Employee</th><th>Division</th><th>Days Logged</th><th>Total</th></tr></thead>
+                  <thead><tr><th>Employee</th><th>Division</th><th>Days</th><th>Total</th><th>Payslip</th></tr></thead>
                   <tbody>
                     {monthly.employees.map((e) => (
                       <tr key={e.employeeId}>
                         <td><strong>{e.name}</strong><div className="muted" style={{ fontSize: "0.78rem" }}>{e.code}</div></td>
                         <td>{e.divisionName || "—"}</td>
-                        <td>{new Set(e.items.map((it) => String(it.date).slice(0, 10))).size}</td>
+                        <td>{e.daysLogged ?? "—"}</td>
                         <td className="money"><strong>{formatMoney(e.total)}</strong></td>
+                        <td>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => downloadPayslip(e.employeeId, e.code)}
+                            disabled={payslipLoading !== null}
+                          >
+                            {payslipLoading === e.employeeId ? "…" : "↓ PDF"}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -174,6 +191,7 @@ export default function ReportsPage() {
                     <tr style={{ fontWeight: 800 }}>
                       <td colSpan={3}>Grand total</td>
                       <td className="money">{formatMoney(monthly.grandTotal)}</td>
+                      <td />
                     </tr>
                   </tfoot>
                 </table>

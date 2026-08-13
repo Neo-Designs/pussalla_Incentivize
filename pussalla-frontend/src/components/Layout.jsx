@@ -39,6 +39,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="shell">
+      <div className={`sidebar-backdrop ${open ? "open" : ""}`} onClick={() => setOpen(false)} />
       <aside className={`sidebar ${open ? "open" : ""}`}>
         <div className="brand spread">
           <Logo size="sm" />

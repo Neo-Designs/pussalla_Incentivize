@@ -3,11 +3,13 @@ const { pool } = require("../db");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { writeAudit } = require("../utils/audit");
 const { calcEngine } = require("../utils/calcEngine");
+const { parsePagination } = require("../utils/pagination");
 
 const router = express.Router();
 
-// GET /api/daily-logs?date=2026-08-11&divisionId=1
+// GET /api/daily-logs?date=2026-08-11&divisionId=1&page=1&limit=50
 router.get("/", requireAuth, async (req, res) => {
+  const { page, limit, offset } = parsePagination(req);
   const { date, divisionId } = req.query;
   const clauses = [];
   const params = [];
@@ -15,19 +17,25 @@ router.get("/", requireAuth, async (req, res) => {
   if (divisionId) { params.push(divisionId); clauses.push(`l.division_id = $${params.length}`); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
-  const { rows } = await pool.query(
-    `SELECT l.*, t.name AS task_name, t.unit, t.task_type,
-       COALESCE(json_agg(json_build_object('employeeId', p.employee_id, 'share', p.share_amount))
-         FILTER (WHERE p.id IS NOT NULL), '[]') AS participants
-     FROM daily_task_logs l
+  const baseSelect = `FROM daily_task_logs l
      JOIN tasks t ON t.id = l.task_id
      LEFT JOIN task_participants p ON p.daily_task_log_id = l.id
-     ${where}
-     GROUP BY l.id, t.name, t.unit, t.task_type
-     ORDER BY l.log_date DESC, l.id DESC`,
-    params
-  );
-  res.json(rows);
+     ${where}`;
+
+  const [{ rows }, { rows: countRows }] = await Promise.all([
+    pool.query(
+      `SELECT l.*, t.name AS task_name, t.unit, t.task_type,
+       COALESCE(json_agg(json_build_object('employeeId', p.employee_id, 'share', p.share_amount))
+         FILTER (WHERE p.id IS NOT NULL), '[]') AS participants
+       ${baseSelect}
+       GROUP BY l.id, t.name, t.unit, t.task_type
+       ORDER BY l.log_date DESC, l.id DESC
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
+    ),
+    pool.query(`SELECT COUNT(DISTINCT l.id)::int AS total ${baseSelect}`, params),
+  ]);
+  res.json({ rows, page, limit, total: countRows[0].total });
 });
 
 /**

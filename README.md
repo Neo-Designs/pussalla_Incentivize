@@ -14,9 +14,14 @@ The UI is built with a Pussalla brand identity: deep poultry-green + harvest-gol
   - *Individual Flat Rate* — `output × rate`.
   - *Group Flat-Rate Pool* — `output × rate`, split equally among participants.
   - *Group Daily Limit / Tiered* — flat pay up to a target; bonus rate on excess, split among participants.
-- **Reports** — monthly and daily payout reports, top earners, and CSV export.
+- **Reports** — monthly and daily payout reports, top earners, leaderboards, **server-side CSV/Excel export**, and **per-employee PDF payslips**.
+- **Dashboard analytics** — KPI cards (active employees, total payout, flagged edits), per-division payout bars, and a daily payout trend chart (hand-rolled SVG, no chart library).
+- **Self-service earnings** — employees see their own payouts, per-task breakdown, and can download their payslip.
+- **Bulk employee import** — upload a CSV to create many employees at once, with row-by-row error reporting.
+- **Pagination** — all list endpoints (employees, daily-logs, tasks, audit-logs) return `{rows, page, limit, total}` so the UI scales to thousands of records.
+- **Multi-company ready** — every customer runs an isolated PostgreSQL database; a `companies` table holds the tenant identity. See `docs/CUSTOMER_DATABASE_SETUP.md`.
 - **Audit trail** — every create/update/delete is logged. **Retroactive edits** (changes made after the original log date) are automatically flagged for super-admin review.
-- **Pussalla branding** — green/gold/cream palette, animated "egg" loader, pulsing live status dot, animated bar charts, and a dynamic login hero.
+- **Pussalla branding** — burgundy/red poultry-green + harvest-gold on a warm cream canvas, custom loading animations, glassmorphic surfaces, staggered entrance animations, and live status indicators.
 
 ---
 
@@ -35,22 +40,29 @@ The UI is built with a Pussalla brand identity: deep poultry-green + harvest-gol
 
 ```
 pussalla_Incentivize/
-├── pussalla-backend/        # Express.js API (unchanged)
+├── Dockerfile                # Multi-stage: builds frontend + runs backend
+├── docker-compose.prod.yml   # One-command production stack (app + Postgres)
+├── docs/
+│   └── CUSTOMER_DATABASE_SETUP.md  # Onboard a new customer (Neon/Supabase/self-hosted)
+├── pussalla-backend/        # Express.js API
 │   ├── src/
-│   │   ├── app.js           # Express app, middleware, route mounting
+│   │   ├── app.js           # Express app, middleware, route mounting, rate-limit, serves frontend
 │   │   ├── server.js        # HTTP server entry point
 │   │   ├── db.js            # PostgreSQL connection pool
-│   │   ├── schema.sql       # Database schema (types, tables, indexes)
+│   │   ├── schema.sql       # Database schema (types, tables, indexes, companies)
 │   │   ├── seed.js          # Demo data seeder
-│   │   ├── middleware/      # auth, role-gating, audit logging
-│   │   ├── routes/          # auth, divisions, employees, tasks,
-│   │   │                    #   crossAssignments, dailyLogs, reports, auditLogs
-│   │   └── services/        # calculation engine, audit helper
+│   │   ├── migrations/      # 001_scale_and_tenants.sql (indexes + companies table)
+│   │   ├── middleware/      # auth, role-gating, audit logging, zod validation
+│   │   ├── routes/          # auth, divisions, employees (incl. /bulk CSV), tasks,
+│   │   │                    #   crossAssignments, dailyLogs, reports (analytics,
+│   │   │                    #   my-earnings, CSV/PDF exports), auditLogs
+│   │   ├── services/        # calculation engine, audit helper
+│   │   └── utils/           # pagination, exporters (CSV/PDF)
 │   ├── .env.example         # Copy to .env and fill in
 │   ├── docker-compose.yml   # Postgres for quick local start
 │   └── package.json
 │
-└── pussalla-frontend/       # React SPA (this branch's focus)
+└── pussalla-frontend/       # React SPA
     ├── index.html           # Inter + JetBrains Mono fonts, theme color
     ├── vite.config.js       # Dev server + /api proxy → :4000
     ├── public/
@@ -58,14 +70,14 @@ pussalla_Incentivize/
     └── src/
         ├── main.jsx
         ├── App.jsx          # Router + protected routes
-        ├── api/client.js    # Fetch wrapper, JWT, all API methods
+        ├── api/client.js    # Fetch wrapper, JWT, pagination, blob downloads
         ├── context/         # AuthContext, ToastContext
         ├── components/      # Layout, Card, Modal, Loaders, ProtectedRoute
         ├── pages/           # Login, Dashboard, Earnings, DailyLogs,
-        │                    #   Tasks, Employees, CrossAssignments,
-        │                    #   Reports, Audit, NotFound
-        ├── styles/          # theme.css (brand tokens) + app.css (layout)
-        └── utils/helpers.js # formatters, role helpers, date helpers
+        │                    #   Tasks, Employees (bulk import), CrossAssignments,
+        │                    #   Reports (CSV/PDF), Audit, NotFound
+        ├── styles/          # theme.css (brand tokens) + app.css (layout, responsive)
+        └── utils/helpers.js # formatters, role helpers, date helpers, downloadCsv
 ```
 
 ---
@@ -209,7 +221,27 @@ All design tokens live in `pussalla-frontend/src/styles/theme.css` (`:root` cust
 
 ---
 
-## 🏗️ Production Build
+## 🏗️ Production Build & Deployment
+
+### One-command Docker stack (recommended)
+
+The repo ships with a production `Dockerfile` and `docker-compose.prod.yml`
+that build the React frontend and run the backend + Postgres in a single
+container stack — no separate frontend host needed.
+
+```bash
+cp pussalla-backend/.env.example .env   # then edit JWT_SECRET / PGPASSWORD / CORS_ORIGIN
+docker compose -f docker-compose.prod.yml --env-file .env up --build -d
+docker compose exec app npm run seed    # load demo data (first run only)
+```
+
+Open **http://localhost:4000**. The backend serves the built SPA from the
+same origin, so no CORS configuration is needed when `SERVE_FRONTEND=true`.
+
+> For a new customer database (Neon / Supabase / self-hosted), see
+> **`docs/CUSTOMER_DATABASE_SETUP.md`**.
+
+### Static frontend build only
 
 To produce a static production bundle of the frontend:
 
@@ -230,15 +262,27 @@ All routes are prefixed with `/api` and (except `health` and `login`) require a 
 | Method | Route | Purpose |
 |--------|-------|---------|
 | GET | `/api/health` | Health check |
-| POST | `/api/auth/login` | Authenticate, returns JWT + user |
+| POST | `/api/auth/login` | Authenticate, returns JWT + user (rate-limited) |
+| GET | `/api/auth/me` | Current user |
 | GET | `/api/divisions` | List divisions |
-| GET/POST/PATCH/DELETE | `/api/employees` | Employee CRUD |
-| GET/POST/PATCH/DELETE | `/api/tasks` | Task CRUD |
+| GET | `/api/employees?page=&limit=&q=` | Paginated employee list (`{rows,page,limit,total}`) |
+| POST | `/api/employees` | Create employee |
+| POST | `/api/employees/bulk` | Bulk CSV import (returns created/skipped/errors) |
+| GET/POST/PUT/DELETE | `/api/employees/:id` | Employee CRUD |
+| GET | `/api/tasks?page=&limit=&divisionId=` | Paginated task list |
+| GET/POST/PUT/DELETE | `/api/tasks/:id` | Task CRUD |
 | GET/POST/DELETE | `/api/cross-assignments` | Cross-division assignments |
-| GET/POST/PUT/DELETE | `/api/daily-logs` | Daily log CRUD (triggers calc engine) |
-| GET | `/api/reports/monthly?month=YYYY-MM` | Monthly payout report |
-| GET | `/api/reports/daily?date=YYYY-MM-DD` | Daily payout report |
-| GET | `/api/audit-logs?flagged=true` | Audit trail (filter by flagged) |
+| GET | `/api/daily-logs?page=&limit=&date=` | Paginated daily logs |
+| GET/POST/PUT/DELETE | `/api/daily-logs/:id` | Daily log CRUD (triggers calc engine) |
+| GET | `/api/reports/monthly?month=YYYY-MM` | Server-side monthly payout report |
+| GET | `/api/reports/daily?date=YYYY-MM-DD` | Server-side daily payout report |
+| GET | `/api/reports/monthly/:employeeId` | Per-employee drill-down |
+| GET | `/api/reports/my-earnings?from=&to=` | Self-service earnings (scoped to caller) |
+| GET | `/api/reports/analytics?from=&to=` | Dashboard analytics (KPIs, divisions, trends) |
+| GET | `/api/reports/monthly.csv?month=` | Monthly CSV export |
+| GET | `/api/reports/daily.csv?date=` | Daily CSV export |
+| GET | `/api/reports/payslip.pdf?employeeId=&month=` | PDF payslip (employees: own only) |
+| GET | `/api/audit-logs?page=&limit=&flagged=true` | Paginated audit trail |
 
 The frontend API client (`pussalla-frontend/src/api/client.js`) wraps all of these.
 

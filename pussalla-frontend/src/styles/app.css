@@ -271,6 +271,40 @@
   .login-wrap { grid-template-columns: 1fr; }
   .login-hero { display: none; }
   .login-card-wrap { padding: 2rem 1.2rem; }
+  /* Stack two-column grids on narrow screens. */
+  .grid, .kpi-grid { grid-template-columns: 1fr 1fr !important; }
+  .content { padding: 1rem; }
+  .page-head { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+  .page-head .row { flex-wrap: wrap; }
+  /* Make wide tables horizontally scroll instead of overflowing. */
+  .data, table.data { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  .topbar { flex-wrap: wrap; gap: 0.4rem; }
+  .topbar .crumbs { font-size: 0.72rem; }
+}
+
+@media (max-width: 560px) {
+  .grid, .kpi-grid { grid-template-columns: 1fr !important; }
+  .content { padding: 0.8rem; }
+  .topbar { padding: 0.6rem 0.8rem; }
+  .topbar .crumbs { display: none; }
+  .card { padding: 0.9rem; }
+  .btn, button { min-height: 40px; }
+  .modal { width: calc(100% - 1rem) !important; }
+}
+
+/* Backdrop behind the open mobile sidebar drawer. */
+.sidebar-backdrop { display: none; }
+@media (max-width: 880px) {
+  .sidebar-backdrop.open { display: block; position: fixed; inset: 0; background: rgba(4,9,12,0.45); z-index: 800; }
+}
+
+/* Respect users who prefer reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 .menu-btn { display: none; align-items: center; gap: 0.4rem; border: 1px solid var(--ink-200); background: #fff; padding: 0.42rem 0.75rem; border-radius: 999px; transition: border-color 0.15s var(--ease); }
 .menu-btn:hover { border-color: var(--ink-300); }

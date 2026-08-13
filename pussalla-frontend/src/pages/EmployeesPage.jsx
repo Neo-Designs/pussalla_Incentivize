@@ -9,6 +9,11 @@ import { formatMoney, roleLabel, initials, hasRole } from "../utils/helpers";
 
 const ROLES = ["employee", "supervisor", "hr", "admin"];
 
+const CSV_TEMPLATE = `code,name,role,divisionId,password
+EMP-031,Sample Employee,employee,1,TempPass123
+EMP-032,Sample Supervisor,supervisor,PPA,TempPass123
+`;
+
 export default function EmployeesPage() {
   const { user } = useAuth();
   const toast = useToast();
@@ -20,6 +25,7 @@ export default function EmployeesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -53,7 +59,14 @@ export default function EmployeesPage() {
       <PageHead
         title="Employees"
         subtitle="Manage staff records, roles and home division. All changes are audit-logged."
-        actions={<button className="btn" onClick={() => { setEditTarget(null); setModalOpen(true); }}>+ Add employee</button>}
+        actions={
+          <>
+            {hasRole(user, "hr") && (
+              <button className="btn btn-ghost" onClick={() => setImportOpen(true)}>↓ Bulk import (CSV)</button>
+            )}
+            <button className="btn" onClick={() => { setEditTarget(null); setModalOpen(true); }}>+ Add employee</button>
+          </>
+        }
       />
 
       <div className="kpi-grid stagger" style={{ marginBottom: "1rem" }}>
@@ -119,6 +132,10 @@ export default function EmployeesPage() {
 
       {modalOpen && (
         <EmployeeModal divisions={divisions} editTarget={editTarget} onSaved={() => { setModalOpen(false); setEditTarget(null); load(); }} onClose={() => { setModalOpen(false); setEditTarget(null); }} />
+      )}
+
+      {importOpen && (
+        <BulkImportModal divisions={divisions} onDone={() => load()} onClose={() => setImportOpen(false)} />
       )}
 
       {confirmDel && (
@@ -222,6 +239,109 @@ function EmployeeModal({ divisions, editTarget, onSaved, onClose }) {
         )}
       </div>
       {isEdit && <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.8rem" }}>Role and division changes are audited. To reset a password, contact an administrator.</p>}
+    </Modal>
+  );
+}
+
+function downloadTemplate() {
+  const blob = new Blob([CSV_TEMPLATE], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "pussalla-employee-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function BulkImportModal({ divisions, onDone, onClose }) {
+  const toast = useToast();
+  const [csvText, setCsvText] = useState("");
+  const [result, setResult] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const onFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setCsvText(String(reader.result || ""));
+    reader.readAsText(file);
+  };
+
+  const submit = async () => {
+    if (!csvText.trim()) { toast.error("Paste CSV or pick a file first"); return; }
+    setSaving(true);
+    try {
+      const r = await employeesApi.bulkImport(csvText);
+      setResult(r);
+      if (r.created) { toast.success(`${r.created} employee(s) imported`); onDone(); }
+      else { toast.info("No new employees created"); }
+    } catch (e) { toast.error(e.message); } finally { setSaving(false); }
+  };
+
+  return (
+    <Modal
+      title="Bulk import employees"
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
+          <button className="btn" onClick={submit} disabled={saving || !csvText.trim()}>
+            {saving ? <><MiniSpinner /> Importing…</> : "Import CSV"}
+          </button>
+        </>
+      }
+    >
+      <div style={{ marginBottom: "0.8rem" }}>
+        <button className="btn btn-ghost btn-sm" onClick={downloadTemplate}>↓ Download CSV template</button>
+        <span className="muted" style={{ fontSize: "0.82rem", marginLeft: "0.6rem" }}>
+          Columns: code, name, role, divisionId, password
+        </span>
+      </div>
+      <div style={{ marginBottom: "0.6rem" }}>
+        <label>Choose CSV file</label>
+        <input type="file" accept=".csv,text/csv" onChange={onFile} />
+      </div>
+      <div>
+        <label>…or paste CSV here</label>
+        <textarea
+          value={csvText}
+          onChange={(e) => setCsvText(e.target.value)}
+          rows={8}
+          placeholder={"code,name,role,divisionId,password\nEMP-031,...,employee,1,Pass123"}
+          style={{ fontFamily: "monospace", fontSize: "0.82rem", width: "100%" }}
+        />
+      </div>
+      <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.4rem" }}>
+        Valid division IDs/codes: {divisions.map((d) => `${d.id} (${d.code})`).join(", ")}.
+        Valid roles: employee, supervisor, hr, admin.
+      </p>
+
+      {result && (
+        <div style={{ marginTop: "0.8rem" }}>
+          <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: "0.6rem" }}>
+            <KPI tone="green" label="Created" value={result.created} />
+            <KPI tone="gold" label="Skipped" value={result.skipped.length} />
+            <KPI tone="red" label="Errors" value={result.errors.length} />
+          </div>
+          {result.skipped.length > 0 && (
+            <details style={{ marginBottom: "0.4rem" }}>
+              <summary style={{ cursor: "pointer", fontSize: "0.85rem" }}>Skipped rows ({result.skipped.length})</summary>
+              <ul style={{ fontSize: "0.8rem", marginTop: "0.3rem" }}>
+                {result.skipped.map((s, i) => <li key={i}>Row {s.row} · {s.code || "—"}: {s.reason}</li>)}
+              </ul>
+            </details>
+          )}
+          {result.errors.length > 0 && (
+            <details>
+              <summary style={{ cursor: "pointer", fontSize: "0.85rem" }}>Error rows ({result.errors.length})</summary>
+              <ul style={{ fontSize: "0.8rem", marginTop: "0.3rem" }}>
+                {result.errors.map((s, i) => <li key={i}>Row {s.row} · {s.code || "—"}: {s.error}</li>)}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }

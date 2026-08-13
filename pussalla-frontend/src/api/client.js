@@ -40,18 +40,39 @@ async function request(path, { method = "GET", body, signal, raw } = {}) {
 
   if (res.status === 204) return null;
 
+  // Non-JSON responses (CSV / PDF downloads): return a Blob.
+  const ctype = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    const text = await res.text();
+    let data = null;
+    if (text) { try { data = JSON.parse(text); } catch { data = text; } }
+    const message = (data && data.error) || res.statusText || "Request failed";
+    if (res.status === 401 && onUnauthorized) onUnauthorized();
+    throw new ApiError(message, res.status, data);
+  }
+
+  if (ctype.includes("text/csv") || ctype.includes("application/pdf")) {
+    return res.blob();
+  }
+
   const text = await res.text();
   let data = null;
   if (text) {
     try { data = JSON.parse(text); } catch { data = text; }
   }
-
-  if (!res.ok) {
-    const message = (data && data.error) || res.statusText || "Request failed";
-    if (res.status === 401 && onUnauthorized) onUnauthorized();
-    throw new ApiError(message, res.status, data);
-  }
   return raw ? text : data;
+}
+
+// Trigger a browser download for a Blob returned by an export endpoint.
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export const api = {
@@ -59,7 +80,23 @@ export const api = {
   post: (p, body, opts) => request(p, { method: "POST", body, ...opts }),
   put: (p, body, opts) => request(p, { method: "PUT", body, ...opts }),
   del: (p, opts) => request(p, { method: "DELETE", ...opts }),
+  postRaw: (p, text, contentType = "text/csv") =>
+    fetch(p, {
+      method: "POST",
+      headers: { "Content-Type": contentType, Authorization: `Bearer ${storage.getToken()}` },
+      body: text,
+    }).then((res) => (res.ok ? res.json() : res.json().then((d) => Promise.reject(new ApiError(d.error || "Request failed", res.status, d))))),
 };
+
+// Build a query string from a params object, skipping empty values.
+function qs(params) {
+  const q = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => {
+    if (v != null && v !== "") q.set(k, v);
+  });
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
 
 // ---- auth -------------------------------------------------------------
 export const authApi = {
@@ -73,16 +110,21 @@ export const divisionsApi = {
 };
 
 // ---- employees --------------------------------------------------------
+// list() returns { rows, page, limit, total }. Pass { page, limit, q, ... }
+// for paginated/filterable access; omit for a default page.
 export const employeesApi = {
-  list: () => api.get("/api/employees"),
+  list: (params) => api.get("/api/employees" + qs(params)).then((d) => d.rows ?? d),
+  listPage: (params) => api.get("/api/employees" + qs(params)),
   create: (payload) => api.post("/api/employees", payload),
   update: (id, payload) => api.put(`/api/employees/${id}`, payload),
   remove: (id) => api.del(`/api/employees/${id}`),
+  bulkImport: (csvText) => api.postRaw("/api/employees/bulk", csvText, "text/csv"),
 };
 
 // ---- tasks ------------------------------------------------------------
 export const tasksApi = {
-  list: (divisionId) => api.get("/api/tasks" + (divisionId ? `?divisionId=${divisionId}` : "")),
+  list: (divisionId, params) =>
+    api.get("/api/tasks" + qs({ divisionId, ...params })).then((d) => d.rows ?? d),
   create: (payload) => api.post("/api/tasks", payload),
   update: (id, payload) => api.put(`/api/tasks/${id}`, payload),
   remove: (id) => api.del(`/api/tasks/${id}`),
@@ -90,19 +132,14 @@ export const tasksApi = {
 
 // ---- cross-assignments ------------------------------------------------
 export const crossApi = {
-  list: (params) => {
-    const q = new URLSearchParams(params || {}).toString();
-    return api.get("/api/cross-assignments" + (q ? `?${q}` : ""));
-  },
+  list: (params) => api.get("/api/cross-assignments" + qs(params)),
   create: (payload) => api.post("/api/cross-assignments", payload),
 };
 
 // ---- daily logs -------------------------------------------------------
 export const dailyLogsApi = {
-  list: (params) => {
-    const q = new URLSearchParams(params || {}).toString();
-    return api.get("/api/daily-logs" + (q ? `?${q}` : ""));
-  },
+  list: (params) => api.get("/api/daily-logs" + qs(params)).then((d) => d.rows ?? d),
+  listPage: (params) => api.get("/api/daily-logs" + qs(params)),
   create: (payload) => api.post("/api/daily-logs", payload),
   update: (id, totalOutput) => api.put(`/api/daily-logs/${id}`, { totalOutput }),
   remove: (id) => api.del(`/api/daily-logs/${id}`),
@@ -112,14 +149,20 @@ export const dailyLogsApi = {
 export const reportsApi = {
   daily: (date) => api.get(`/api/reports/daily?date=${encodeURIComponent(date)}`),
   monthly: (month) => api.get(`/api/reports/monthly?month=${encodeURIComponent(month)}`),
+  monthlyEmployee: (employeeId, month) =>
+    api.get(`/api/reports/monthly/${employeeId}?month=${encodeURIComponent(month)}`),
+  myEarnings: (from, to) => api.get("/api/reports/my-earnings" + qs({ from, to })),
+  analytics: (from, to) => api.get("/api/reports/analytics" + qs({ from, to })),
+  exportMonthlyCsv: (month) => api.get(`/api/reports/monthly.csv?month=${encodeURIComponent(month)}`),
+  exportDailyCsv: (date) => api.get(`/api/reports/daily.csv?date=${encodeURIComponent(date)}`),
+  payslipPdf: (employeeId, month) =>
+    api.get(`/api/reports/payslip.pdf?employeeId=${employeeId}&month=${encodeURIComponent(month)}`),
 };
 
 // ---- audit logs -------------------------------------------------------
 export const auditApi = {
-  list: (params) => {
-    const q = new URLSearchParams(params || {}).toString();
-    return api.get("/api/audit-logs" + (q ? `?${q}` : ""));
-  },
+  list: (params) => api.get("/api/audit-logs" + qs(params)).then((d) => d.rows ?? d),
+  listPage: (params) => api.get("/api/audit-logs" + qs(params)),
 };
 
 // ---- health -----------------------------------------------------------
