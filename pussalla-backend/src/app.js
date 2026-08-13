@@ -2,7 +2,15 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
+
+// Serve the built frontend (single origin in production)
 const path = require("path");
+if (process.env.SERVE_FRONTEND === "true") {
+  const dist = path.join(__dirname, "../../pussalla-frontend/dist");
+  app.use(express.static(dist));
+  app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(dist, "index.html")));
+}
+
 const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 
@@ -63,13 +71,6 @@ if (process.env.SERVE_FRONTEND === "true") {
   });
 }
 
-// Serve the built frontend (single origin in production)
-const path = require("path");
-if (process.env.SERVE_FRONTEND === "true") {
-  const dist = path.join(__dirname, "../../pussalla-frontend/dist");
-  app.use(express.static(dist));
-  app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(dist, "index.html")));
-}
 
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
