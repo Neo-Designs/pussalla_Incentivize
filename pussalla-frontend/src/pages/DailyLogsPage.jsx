@@ -16,7 +16,10 @@ export default function DailyLogsPage() {
   const [divisions, setDivisions] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [logs, setLogs] = useState([]);
-  const [crossEmployeeIds, setCrossEmployeeIds] = useState([]);
+  // employeeId -> from_division_id, for cross-assignments INTO the filtered
+  // division on the filtered date. Lets us tag a cross-assigned worker with
+  // the home division they came from.
+  const [crossMap, setCrossMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState(todayISO());
   const [filterDiv, setFilterDiv] = useState(user.homeDivisionId || "");
@@ -46,7 +49,9 @@ export default function DailyLogsPage() {
       setDivisions(divs);
       setEmployees(emps);
       setLogs(rows);
-      setCrossEmployeeIds(Array.from(new Set(cross.map((c) => Number(c.employee_id)))));
+      const map = {};
+      for (const c of cross) map[Number(c.employee_id)] = Number(c.from_division_id);
+      setCrossMap(map);
     } finally {
       setLoading(false);
     }
@@ -140,7 +145,7 @@ export default function DailyLogsPage() {
         <LogEntryModal
           divisions={divisions}
           employees={employees}
-          crossEmployeeIds={crossEmployeeIds}
+          crossMap={crossMap}
           editTarget={editTarget}
           defaultDivisionId={user.homeDivisionId}
           onSaved={handleSaved}
@@ -169,7 +174,7 @@ export default function DailyLogsPage() {
   );
 }
 
-function LogEntryModal({ divisions, employees, crossEmployeeIds, editTarget, defaultDivisionId, onSaved, onClose }) {
+function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivisionId, onSaved, onClose }) {
   const toast = useToast();
   const [date, setDate] = useState(editTarget?.log_date || todayISO());
   const [divisionId, setDivisionId] = useState(editTarget?.division_id || defaultDivisionId || "");
@@ -244,11 +249,17 @@ function LogEntryModal({ divisions, employees, crossEmployeeIds, editTarget, def
     () => employees.filter(
       (e) => e.active !== false && (
         (!divisionId || Number(e.home_division_id) === Number(divisionId)) ||
-        crossEmployeeIds.includes(Number(e.id))
+        Object.prototype.hasOwnProperty.call(crossMap, Number(e.id))
       )
     ),
-    [employees, divisionId, crossEmployeeIds]
+    [employees, divisionId, crossMap]
   );
+
+  const crossFromName = (empId) => {
+    const fromId = crossMap[Number(empId)];
+    if (!fromId) return null;
+    return divisions.find((d) => Number(d.id) === Number(fromId))?.name || "another division";
+  };
 
   const setEntry = (i, field, value) => {
     setEntries((arr) => arr.map((e, idx) => (idx === i ? { ...e, [field]: value } : e)));
@@ -390,8 +401,8 @@ function LogEntryModal({ divisions, employees, crossEmployeeIds, editTarget, def
                 <select value={en.employeeId} onChange={(e) => setEntry(i, "employeeId", e.target.value)}>
                   <option value="">Select employee…</option>
                   {validEmployees.map((emp) => {
-                    const isCross = crossEmployeeIds.includes(Number(emp.id)) && Number(emp.home_division_id) !== Number(divisionId);
-                    return <option key={emp.id} value={emp.id}>{emp.code} · {emp.name}{isCross ? " (cross-assigned)" : ""}</option>;
+                    const from = crossFromName(emp.id);
+                    return <option key={emp.id} value={emp.id}>{emp.code} · {emp.name}{from ? ` (cross-assigned from ${from})` : ""}</option>;
                   })}
                 </select>
               </div>
@@ -420,13 +431,13 @@ function LogEntryModal({ divisions, employees, crossEmployeeIds, editTarget, def
                 ) : (
                   <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "0.3rem" }}>
                     {validEmployees.map((emp) => {
-                      const isCross = crossEmployeeIds.includes(Number(emp.id)) && Number(emp.home_division_id) !== Number(divisionId);
+                      const from = crossFromName(emp.id);
                       return (
                         <label key={emp.id} className="row" style={{ fontSize: "0.85rem", cursor: "pointer", gap: "0.4rem" }}>
                           <input type="checkbox" checked={participantIds.includes(emp.id)} onChange={() => toggleParticipant(emp.id)} style={{ width: "auto" }} />
                           <span>
                             {emp.name} <span className="muted">{emp.code}</span>
-                            {isCross && <Badge tone="gold" style={{ marginLeft: "0.3rem", fontSize: "0.66rem" }}>cross</Badge>}
+                            {from && <Badge tone="gold" style={{ marginLeft: "0.3rem", fontSize: "0.66rem" }}>cross-assigned from {from}</Badge>}
                           </span>
                         </label>
                       );
