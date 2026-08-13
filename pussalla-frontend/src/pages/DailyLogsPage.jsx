@@ -27,7 +27,7 @@ export default function DailyLogsPage() {
   const [editTarget, setEditTarget] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
 
-  const canSeeAllDivisions = hasRole(user, "super_admin");
+  const canSeeAllDivisions = hasRole(user, "super_admin") || hasRole(user, "supervisor");
 
   const load = async () => {
     setLoading(true);
@@ -42,7 +42,9 @@ export default function DailyLogsPage() {
       if (filterDiv) crossParams.toDivisionId = filterDiv;
       const [divs, emps, rows, cross] = await Promise.all([
         divisionsApi.list().catch(() => []),
-        employeesApi.list().catch(() => []),
+        // Fetch a large page so cross-assigned employees from every home
+        // division are available when the supervisor picks a target division.
+        employeesApi.list({ limit: 500 }).catch(() => []),
         dailyLogsApi.list(params).catch(() => []),
         crossApi.list(crossParams).catch(() => []),
       ]);
@@ -182,6 +184,27 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
 
+  // Cross-assignments INTO the modal's selected division, active as of the
+  // modal's selected date. This is fetched independently of the page filter so
+  // that a supervisor picking any division sees the correct cross-assigned
+  // staff for that division on that date.
+  const [modalCrossMap, setModalCrossMap] = useState(crossMap || {});
+
+  useEffect(() => {
+    if (!divisionId || !date) { setModalCrossMap(crossMap || {}); return; }
+    let cancelled = false;
+    crossApi.list({ toDivisionId: divisionId, effectiveOn: date })
+      .then((rows) => {
+        if (cancelled) return;
+        const map = {};
+        for (const c of rows) map[Number(c.employee_id)] = Number(c.from_division_id);
+        setModalCrossMap(map);
+      })
+      .catch(() => { if (!cancelled) setModalCrossMap(crossMap || {}); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [divisionId, date]);
+
   // Type 1 entries: one row per employee with individual output
   const [entries, setEntries] = useState(() => {
     if (editTarget && editTarget.task_type === 1) {
@@ -249,14 +272,14 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
     () => employees.filter(
       (e) => e.active !== false && (
         (!divisionId || Number(e.home_division_id) === Number(divisionId)) ||
-        Object.prototype.hasOwnProperty.call(crossMap, Number(e.id))
+        Object.prototype.hasOwnProperty.call(modalCrossMap, Number(e.id))
       )
     ),
-    [employees, divisionId, crossMap]
+    [employees, divisionId, modalCrossMap]
   );
 
   const crossFromName = (empId) => {
-    const fromId = crossMap[Number(empId)];
+    const fromId = modalCrossMap[Number(empId)];
     if (!fromId) return null;
     return divisions.find((d) => Number(d.id) === Number(fromId))?.name || "another division";
   };
@@ -437,7 +460,7 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
                           <input type="checkbox" checked={participantIds.includes(emp.id)} onChange={() => toggleParticipant(emp.id)} style={{ width: "auto" }} />
                           <span>
                             {emp.name} <span className="muted">{emp.code}</span>
-                            {from && <Badge tone="gold" style={{ marginLeft: "0.3rem", fontSize: "0.66rem" }}>cross-assigned from {from}</Badge>}
+                            {from && <Badge tone="red" style={{ marginLeft: "0.3rem", fontSize: "0.66rem" }}>cross-assigned from {from}</Badge>}
                           </span>
                         </label>
                       );

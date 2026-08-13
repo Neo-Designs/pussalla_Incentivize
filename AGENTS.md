@@ -7,6 +7,7 @@
   - JWT payload: `{ id, code, name, role, homeDivisionId }`.
   - Calc engine handles 3 task types: individual flat-rate, group flat-rate pool (split), group daily-limit/tiered (bonus on excess over target, split among participants).
   - Audit trail auto-flags retroactive edits (edits made after the original log date).
+- **Cross-assignments (effective-from semantics):** `GET /api/cross-assignments` supports `date` (exact match) AND `effectiveOn` (returns assignments where `assignment_date <= effectiveOn`). The daily-log New Entry modal queries `?toDivisionId=X&effectiveOn=date` so cross-assigned staff show under their target division from the assignment date onward. The modal fetches its OWN cross-map on date/division change (independent of the page filter), so a supervisor picking any division sees the right cross-assigned employees. Cross-assigned employees are tagged with a red Badge "cross-assigned from <division>". Supervisors can log for ANY division (demo mode): the page division filter is unlocked for supervisors too.
 - **Frontend** (`pussalla-frontend/`): Vite + React 18, react-router-dom v6.
   - API client: `src/api/client.js` (matches backend routes).
   - Auth: `src/context/AuthContext.jsx`; Toasts: `src/context/ToastContext.jsx`.

@@ -12,6 +12,22 @@ const repoRoot = path.join(__dirname, "..", "..");
 const frontendDir = path.join(repoRoot, "pussalla-frontend");
 const publicDir = path.join(__dirname, "..", "public");
 
+// Recursively copy the *contents* of `src` into `dest` (dest itself is not
+// recreated as a nested folder). Replaces the previous `cp -r dist/. public/`
+// shell call, which produced a nested public/dist/ on some platforms.
+function copyDirContents(src, dest) {
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const from = path.join(src, entry.name);
+    const to = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      fs.mkdirSync(to, { recursive: true });
+      copyDirContents(from, to);
+    } else {
+      fs.copyFileSync(from, to);
+    }
+  }
+}
+
 // Skip when the frontend source is not checked out (backend-only deploy).
 if (!fs.existsSync(path.join(frontendDir, "package.json"))) {
   console.log("[build-frontend] No pussalla-frontend source found — using bundled public/ as-is.");
@@ -37,10 +53,14 @@ try {
   // Build into dist/.
   execSync("npm run build", { cwd: frontendDir, stdio: "inherit" });
 
-  // Copy dist/ → public/ (the committed copy may be stale).
+  // Copy dist/ contents → public/ (the committed copy may be stale).
+  // Recreate public/ so stale assets from a previous build are removed.
   fs.rmSync(publicDir, { recursive: true, force: true });
   fs.mkdirSync(publicDir, { recursive: true });
-  execSync(`cp -r ${path.join(frontendDir, "dist", ".")} ${publicDir}/`);
+  copyDirContents(path.join(frontendDir, "dist"), publicDir);
+  if (!fs.existsSync(path.join(publicDir, "index.html"))) {
+    throw new Error("Frontend build produced no index.html");
+  }
   console.log("[build-frontend] ✓ Frontend built and copied to pussalla-backend/public/");
 } catch (err) {
   console.error("[build-frontend] Build failed, falling back to bundled public/:", err.message);

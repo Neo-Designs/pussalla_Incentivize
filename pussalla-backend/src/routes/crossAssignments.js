@@ -6,10 +6,14 @@ const { writeAudit } = require("../utils/audit");
 const router = express.Router();
 
 router.get("/", requireAuth, async (req, res) => {
-  const { date, toDivisionId } = req.query;
+  const { date, effectiveOn, toDivisionId } = req.query;
   const clauses = [];
   const params = [];
   if (date) { params.push(date); clauses.push(`assignment_date = $${params.length}`); }
+  // effectiveOn: a cross-assignment is active "as of" this date — i.e. the
+  // assignment_date is on or before it. Lets the daily-log modal ask "who is
+  // rostered into division X as of today?" without an exact-date match.
+  if (effectiveOn) { params.push(effectiveOn); clauses.push(`assignment_date <= $${params.length}`); }
   if (toDivisionId) { params.push(toDivisionId); clauses.push(`to_division_id = $${params.length}`); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const { rows } = await pool.query(

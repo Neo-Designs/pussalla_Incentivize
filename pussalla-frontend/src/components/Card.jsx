@@ -44,8 +44,8 @@ export function EmptyState({ icon = "🪹", title, message }) {
   );
 }
 
-export function Badge({ tone = "grey", children }) {
-  return <span className={`badge tag-${tone}`}>{children}</span>;
+export function Badge({ tone = "grey", children, style }) {
+  return <span className={`badge tag-${tone}`} style={style}>{children}</span>;
 }
 
 // Lightweight skeleton row blocks for table-loading states.
