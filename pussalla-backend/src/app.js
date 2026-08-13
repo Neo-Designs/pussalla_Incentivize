@@ -3,14 +3,6 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 
-// Serve the built frontend (single origin in production)
-const path = require("path");
-if (process.env.SERVE_FRONTEND === "true") {
-  const dist = path.join(__dirname, "../../pussalla-frontend/dist");
-  app.use(express.static(dist));
-  app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(dist, "index.html")));
-}
-
 const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 
@@ -26,6 +18,14 @@ const reportRoutes = require("./routes/reports");
 const app = express();
 
 app.use(helmet());
+
+// Serve the built frontend (single origin in production)
+const path = require("path");
+if (process.env.SERVE_FRONTEND === "true") {
+  const dist = path.join(__dirname, "../../pussalla-frontend/dist");
+  app.use(express.static(dist));
+  app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(dist, "index.html")));
+}
 
 // CORS: in development allow any origin; in production require an explicit
 // CORS_ORIGIN (remove the wildcard fallback so the public demo isn't wide open).
