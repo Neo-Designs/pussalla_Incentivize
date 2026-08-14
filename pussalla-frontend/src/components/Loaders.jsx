@@ -1,13 +1,13 @@
 import React from "react";
 
-// Pussalla wordmark with the gradient "P" mark.
+// "Incentivize" wordmark with the gradient "I" mark.
 export function Logo({ size = "md" }) {
   const font = size === "lg" ? "1.8rem" : size === "sm" ? "1.1rem" : "1.35rem";
   return (
     <span className="ps-logo-mark">
-      <span className="mark">P</span>
+      <span className="mark">I</span>
       <span className="word" style={{ fontSize: font }}>
-        <span className="p">Puss</span><span className="u">alla</span>
+        Incentivize
       </span>
     </span>
   );
@@ -40,7 +40,7 @@ export function ProgressBar() {
 }
 
 // Full-screen splash shown during initial auth bootstrap.
-export function FullScreenLoader({ label = "Loading Pussalla…" }) {
+export function FullScreenLoader({ label = "Loading Incentivize…" }) {
   return (
     <div className="app-loader">
       <div className="stack">

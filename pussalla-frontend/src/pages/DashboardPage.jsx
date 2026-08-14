@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Card, { PageHead, KPI, EmptyState, Badge, SkeletonRows } from "../components/Card.jsx";
+import Reveal from "../components/Reveal.jsx";
+import { VerticalBarChart, MultiLineChart, AreaChart, StackedColumnChart, Sparkline, CHART_PALETTE } from "../components/charts.jsx";
 import { dailyLogsApi, reportsApi, divisionsApi, auditApi } from "../api/client";
 import { formatMoney, formatNumber, formatDate, hasRole, roleLabel, taskTypeLabel, todayISO, currentMonthISO } from "../utils/helpers";
 
@@ -14,6 +16,8 @@ export default function DashboardPage() {
   const [analytics, setAnalytics] = useState(null);
   const [audit, setAudit] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [earnerDiv, setEarnerDiv] = useState("");   // top-earners division filter
+  const [drillDiv, setDrillDiv] = useState(null);    // selected division for drill-down
 
   useEffect(() => {
     let active = true;
@@ -50,6 +54,7 @@ export default function DashboardPage() {
   }, [user]);
 
   const divisionName = (id) => divisions.find((d) => d.id === id)?.name || "—";
+  const drillTitle = drillDiv ? "Task payout in " + (drillDiv.name || divisionName(drillDiv.id)) : "Payout by division";
 
   // Employee dashboard: personal earnings from today's logs.
   const myTodayTotal = useMemo(() => {
@@ -123,30 +128,32 @@ export default function DashboardPage() {
                 <KPI tone="gold" label="Output Captured" value={formatNumber(todayLogs.reduce((s, l) => s + Number(l.total_output), 0))} sub="across today's logs" />
                 <KPI tone="blue" label="Payout Total Today" value={formatMoney(todayLogs.reduce((s, l) => s + Number(l.amount), 0))} sub="gross incentive" />
               </div>
-              <Card className="rise">
-                <div className="spread" style={{ marginBottom: "0.8rem" }}>
-                  <h3 className="section-title" style={{ margin: 0 }}>Today's daily logs</h3>
-                  <Link to="/daily-logs" className="btn btn-sm">Log output →</Link>
-                </div>
-                {todayLogs.length === 0 ? (
-                  <EmptyState title="No logs entered yet today" message="Capture the day's task output to start calculating incentives." />
-                ) : (
-                  <table className="data">
-                    <thead><tr><th>Task</th><th>Type</th><th>Output</th><th>Amount</th><th>Workers</th></tr></thead>
-                    <tbody>
-                      {todayLogs.map((l) => (
-                        <tr key={l.id}>
-                          <td><strong>{l.task_name}</strong></td>
-                          <td><Badge tone="grey">{taskTypeLabel(l.task_type)}</Badge></td>
-                          <td className="mono">{formatNumber(l.total_output)} {l.unit}</td>
-                          <td className="money">{formatMoney(l.amount)}</td>
-                          <td>{(l.participants || []).length}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </Card>
+              <Reveal>
+                <Card className="rise">
+                  <div className="spread" style={{ marginBottom: "0.8rem" }}>
+                    <h3 className="section-title" style={{ margin: 0 }}>Today's daily logs</h3>
+                    <Link to="/daily-logs" className="btn btn-sm">Log output →</Link>
+                  </div>
+                  {todayLogs.length === 0 ? (
+                    <EmptyState title="No logs entered yet today" message="Capture the day's task output to start calculating incentives." />
+                  ) : (
+                    <table className="data">
+                      <thead><tr><th>Task</th><th>Type</th><th>Output</th><th>Amount</th><th>Workers</th></tr></thead>
+                      <tbody>
+                        {todayLogs.map((l) => (
+                          <tr key={l.id}>
+                            <td><strong>{l.task_name}</strong></td>
+                            <td><Badge tone="grey">{taskTypeLabel(l.task_type)}</Badge></td>
+                            <td className="mono">{formatNumber(l.total_output)} {l.unit}</td>
+                            <td className="money">{formatMoney(l.amount)}</td>
+                            <td>{(l.participants || []).length}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </Card>
+              </Reveal>
             </>
           )}
 
@@ -162,96 +169,147 @@ export default function DashboardPage() {
               </div>
 
               {analytics && analytics.divisions.length > 0 && (
-                <Card className="rise" style={{ marginBottom: "1rem" }}>
-                  <h3 className="section-title">Payout by division</h3>
-                  <DivisionBars divisions={analytics.divisions} />
-                </Card>
+                <Reveal style={{ marginBottom: "1rem" }}>
+                  <Card className="rise">
+                    <div className="spread" style={{ marginBottom: "0.8rem" }}>
+                      <h3 className="section-title" style={{ margin: 0 }}>{drillTitle}</h3>
+                      {drillDiv ? (
+                        <button className="btn btn-ghost btn-sm" onClick={() => setDrillDiv(null)}>Back to divisions</button>
+                      ) : null}
+                    </div>
+                    <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0, marginBottom: "0.6rem" }}>
+                      {drillDiv
+                        ? "Which task is costing the company the most in this division. Click a bar to switch back."
+                        : "Click a division bar to drill into per-task payout for that division."}
+                    </p>
+                    {drillDiv ? (
+                      <DivisionTaskBars
+                        tasks={(analytics.divisionTasks || {})[drillDiv.id] || []}
+                        onBack={() => setDrillDiv(null)}
+                      />
+                    ) : (
+                      <VerticalBarChart
+                        data={analytics.divisions}
+                        onSelect={(d) => setDrillDiv(d)}
+                      />
+                    )}
+                  </Card>
+                </Reveal>
               )}
 
-              {analytics && analytics.dailyTrend.length > 1 && (
-                <Card className="rise" style={{ marginBottom: "1rem" }}>
-                  <h3 className="section-title">Daily payout trend</h3>
-                  <TrendChart trend={analytics.dailyTrend} />
-                </Card>
+              {analytics && (analytics.divisionTrend || []).length > 1 && (
+                <Reveal style={{ marginBottom: "1rem" }}>
+                  <Card className="rise">
+                    <h3 className="section-title">Payout trends over time</h3>
+                    <DivisionTrendMultiLine analytics={analytics} divisions={divisions} />
+                  </Card>
+                </Reveal>
               )}
 
-              <div className="grid stagger" style={{ gridTemplateColumns: "1.4fr 1fr" }}>
-                <Card>
-                  <div className="spread" style={{ marginBottom: "0.8rem" }}>
-                    <h3 className="section-title" style={{ margin: 0 }}>Top earners — this month</h3>
-                    <Link to="/reports" className="btn btn-ghost btn-sm">Full reports →</Link>
-                  </div>
-                  {!monthReport || monthReport.employees.length === 0 ? (
-                    <EmptyState title="No monthly data yet" />
-                  ) : (
-                    <table className="data">
-                      <thead><tr><th>Employee</th><th>Division</th><th>Total</th></tr></thead>
-                      <tbody>
-                        {monthReport.employees.slice(0, 6).map((e) => (
-                          <tr key={e.employeeId}>
-                            <td><strong>{e.name}</strong><div className="muted" style={{ fontSize: "0.78rem" }}>{e.code}</div></td>
-                            <td>{e.divisionName || "—"}</td>
-                            <td className="money"><strong>{formatMoney(e.total)}</strong></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </Card>
+              {analytics && (analytics.participationTrend || []).length > 1 && (
+                <Reveal style={{ marginBottom: "1rem" }}>
+                  <Card className="rise">
+                    <h3 className="section-title">Employee participation rate</h3>
+                    <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0, marginBottom: "0.6rem" }}>
+                      Distinct employees earning an incentive each day.
+                    </p>
+                    <AreaChart data={analytics.participationTrend} valueKey="participants" labelKey="date" />
+                  </Card>
+                </Reveal>
+              )}
 
-                <Card>
-                  <h3 className="section-title">Today by division</h3>
-                  {todayLogs.length === 0 ? (
-                    <EmptyState title="No logs today" />
-                  ) : (
-                    (() => {
-                      const byDiv = {};
-                      todayLogs.forEach((l) => {
-                        byDiv[l.division_id] = byDiv[l.division_id] || { name: divisionName(l.division_id), amount: 0, count: 0 };
-                        byDiv[l.division_id].amount += Number(l.amount);
-                        byDiv[l.division_id].count += 1;
-                      });
-                      const max = Math.max(...Object.values(byDiv).map((d) => d.amount), 1);
-                      return Object.values(byDiv).map((d) => (
-                        <div key={d.name} style={{ marginBottom: "0.7rem" }}>
-                          <div className="spread" style={{ fontSize: "0.85rem" }}>
-                            <span>{d.name} <span className="muted">· {d.count}</span></span>
-                            <span className="money"><strong>{formatMoney(d.amount)}</strong></span>
+              {analytics && (analytics.editsTrend || []).length > 0 && (
+                <Reveal style={{ marginBottom: "1rem" }}>
+                  <Card className="rise">
+                    <h3 className="section-title">All audit edits (stacked)</h3>
+                    <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0, marginBottom: "0.6rem" }}>
+                      Daily count of every audit action — create / update / delete.
+                    </p>
+                    <EditsStackedChart rows={analytics.editsTrend} />
+                  </Card>
+                </Reveal>
+              )}
+
+              <Reveal>
+                <div className="grid stagger" style={{ gridTemplateColumns: "1.4fr 1fr" }}>
+                  <Card>
+                    <div className="spread" style={{ marginBottom: "0.8rem" }}>
+                      <h3 className="section-title" style={{ margin: 0 }}>Top earners — leaderboard</h3>
+                      <select
+                        value={earnerDiv}
+                        onChange={(e) => setEarnerDiv(e.target.value)}
+                        style={{ width: "auto", fontSize: "0.8rem" }}
+                      >
+                        <option value="">All divisions</option>
+                        {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    </div>
+                    {!analytics || (analytics.topEarners || []).length === 0 ? (
+                      <EmptyState title="No earner data yet" />
+                    ) : (
+                      <TopEarnersLeaderboard earners={analytics.topEarners} earnerDiv={earnerDiv} divisions={divisions} />
+                    )}
+                    <div style={{ marginTop: "0.7rem" }}>
+                      <Link to="/reports" className="btn btn-ghost btn-sm">Full reports →</Link>
+                    </div>
+                  </Card>
+
+                  <Card>
+                    <h3 className="section-title">Today by division</h3>
+                    {todayLogs.length === 0 ? (
+                      <EmptyState title="No logs today" />
+                    ) : (
+                      (() => {
+                        const byDiv = {};
+                        todayLogs.forEach((l) => {
+                          byDiv[l.division_id] = byDiv[l.division_id] || { name: divisionName(l.division_id), amount: 0, count: 0 };
+                          byDiv[l.division_id].amount += Number(l.amount);
+                          byDiv[l.division_id].count += 1;
+                        });
+                        const max = Math.max(...Object.values(byDiv).map((d) => d.amount), 1);
+                        return Object.values(byDiv).map((d) => (
+                          <div key={d.name} style={{ marginBottom: "0.7rem" }}>
+                            <div className="spread" style={{ fontSize: "0.85rem" }}>
+                              <span>{d.name} <span className="muted">· {d.count}</span></span>
+                              <span className="money"><strong>{formatMoney(d.amount)}</strong></span>
+                            </div>
+                            <div className="bar-track" style={{ marginTop: "0.3rem" }}>
+                              <div className="bar-fill" style={{ width: `${(d.amount / max) * 100}%` }} />
+                            </div>
                           </div>
-                          <div className="bar-track" style={{ marginTop: "0.3rem" }}>
-                            <div className="bar-fill" style={{ width: `${(d.amount / max) * 100}%` }} />
-                          </div>
-                        </div>
-                      ));
-                    })()
-                  )}
-                </Card>
-              </div>
+                        ));
+                      })()
+                    )}
+                  </Card>
+                </div>
+              </Reveal>
 
               {user.role === "super_admin" && (
-                <Card className="rise" style={{ marginTop: "1rem" }}>
-                  <div className="spread" style={{ marginBottom: "0.8rem" }}>
-                    <h3 className="section-title" style={{ margin: 0 }}>🛡️ Flagged retroactive edits</h3>
-                    <Link to="/audit" className="btn btn-ghost btn-sm">Audit trail →</Link>
-                  </div>
-                  {audit.length === 0 ? (
-                    <EmptyState icon="✅" title="Nothing flagged" message="No retroactive log edits detected." />
-                  ) : (
-                    <table className="data">
-                      <thead><tr><th>Actor</th><th>Entity</th><th>Note</th><th>When</th></tr></thead>
-                      <tbody>
-                        {audit.slice(0, 6).map((a) => (
-                          <tr key={a.id}>
-                            <td><strong>{a.actor_name || "—"}</strong><div className="muted" style={{ fontSize: "0.78rem" }}>{a.actor_code}</div></td>
-                            <td className="mono">{a.entity}#{a.entity_id}</td>
-                            <td><span className="flag-dot" /> <span className="muted">{a.note}</span></td>
-                            <td className="muted">{formatDate(a.created_at)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </Card>
+                <Reveal style={{ marginTop: "1rem" }}>
+                  <Card className="rise">
+                    <div className="spread" style={{ marginBottom: "0.8rem" }}>
+                      <h3 className="section-title" style={{ margin: 0 }}>🛡️ Flagged retroactive edits</h3>
+                      <Link to="/audit" className="btn btn-ghost btn-sm">Audit trail →</Link>
+                    </div>
+                    {audit.length === 0 ? (
+                      <EmptyState icon="✅" title="Nothing flagged" message="No retroactive log edits detected." />
+                    ) : (
+                      <table className="data">
+                        <thead><tr><th>Actor</th><th>Entity</th><th>Note</th><th>When</th></tr></thead>
+                        <tbody>
+                          {audit.slice(0, 6).map((a) => (
+                            <tr key={a.id}>
+                              <td><strong>{a.actor_name || "—"}</strong><div className="muted" style={{ fontSize: "0.78rem" }}>{a.actor_code}</div></td>
+                              <td className="mono">{a.entity}#{a.entity_id}</td>
+                              <td><span className="flag-dot" /> <span className="muted">{a.note}</span></td>
+                              <td className="muted">{formatDate(a.created_at)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </Card>
+                </Reveal>
               )}
             </>
           )}
@@ -261,45 +319,82 @@ export default function DashboardPage() {
   );
 }
 
-// Simple hand-rolled SVG bar chart for division payouts (no chart library).
-function DivisionBars({ divisions }) {
-  const max = Math.max(...divisions.map((d) => d.total), 1);
+// Vertical bars of per-task payout within the drilled-down division, so the
+// super admin can see which task costs the company the most there.
+function DivisionTaskBars({ tasks, onBack }) {
+  if (!tasks.length) return <EmptyState title="No task data for this division" />;
+  const data = tasks.map((t) => ({ id: t.taskId, name: t.task, total: t.total }));
   return (
-    <div>
-      {divisions.map((d) => (
-        <div key={d.id} style={{ marginBottom: "0.7rem" }}>
-          <div className="spread" style={{ fontSize: "0.85rem" }}>
-            <span>{d.name} <span className="muted">· {d.logCount} logs</span></span>
-            <span className="money"><strong>{formatMoney(d.total)}</strong></span>
-          </div>
-          <div className="bar-track" style={{ marginTop: "0.3rem" }}>
-            <div className="bar-fill bar-fill-static" style={{ width: `${(d.total / max) * 100}%` }} />
-          </div>
-        </div>
-      ))}
-    </div>
+    <VerticalBarChart
+      data={data}
+      onSelect={onBack}
+      color="#7a1e1e"
+    />
   );
 }
 
-// Hand-rolled SVG line/bars for the daily payout trend.
-function TrendChart({ trend }) {
-  const w = 640;
-  const h = 160;
-  const pad = 28;
-  const data = trend.slice(-30); // last 30 days
-  const max = Math.max(...data.map((d) => d.total), 1);
-  const stepX = (w - pad * 2) / Math.max(data.length - 1, 1);
-  const x = (i) => pad + i * stepX;
-  const y = (v) => h - pad - (v / max) * (h - pad * 2);
-  const points = data.map((d, i) => `${x(i)},${y(d.total)}`).join(" ");
+// Multiline payout trend: one line per division over time.
+function DivisionTrendMultiLine({ analytics, divisions }) {
+  const rows = analytics.divisionTrend || [];
+  if (rows.length < 2) return <EmptyState title="Not enough trend data" />;
+  const dates = [...new Set(rows.map((r) => String(r.date).slice(0, 10)))].sort();
+  const divIds = [...new Set(rows.map((r) => r.divisionId))];
+  const divName = (id) => divisions.find((d) => d.id === id)?.name || `Division ${id}`;
+  const series = divIds.map((id, i) => ({
+    id, name: divName(id), color: CHART_PALETTE[i % CHART_PALETTE.length],
+    points: dates.map((d) => {
+      const r = rows.find((x) => String(x.date).slice(0, 10) === d && x.divisionId === id);
+      return { value: r ? r.total : 0 };
+    }),
+  }));
+  return <MultiLineChart series={series} dates={dates} />;
+}
+
+// Stacked column chart of all audit edits (create/update/delete) per day.
+function EditsStackedChart({ rows }) {
+  if (!rows.length) return <EmptyState title="No edit activity" />;
+  const dates = [...new Set(rows.map((r) => String(r.date).slice(0, 10)))].sort();
+  const actions = [...new Set(rows.map((r) => r.action))];
+  const colors = { CREATE: "#0e7a4f", UPDATE: "#b35400", DELETE: "#a30404" };
+  const stacks = actions.map((a) => ({
+    name: a.charAt(0) + a.slice(1).toLowerCase(),
+    values: dates.map((d) => rows.find((r) => String(r.date).slice(0, 10) === d && r.action === a)?.count || 0),
+  }));
+  return <StackedColumnChart dates={dates} stacks={stacks} colors={actions.map((a) => colors[a] || "#590707")} />;
+}
+
+// Ranked top-earner leaderboard with sparklines, client-filterable by division.
+function TopEarnersLeaderboard({ earners, earnerDiv, divisions }) {
+  const divName = (id) => divisions.find((d) => d.id === id)?.name;
+  const filtered = earners
+    .filter((e) => {
+      if (!earnerDiv) return true;
+      // Match by division name since top earners carry divisionName (home div).
+      return divName(Number(earnerDiv)) === e.divisionName;
+    })
+    .slice(0, 10);
+  if (!filtered.length) return <EmptyState title="No earners for this division" />;
+  const max = filtered[0].total || 1;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Daily payout trend">
-      <line x1={pad} y1={h - pad} x2={w - pad} y2={h - pad} stroke="var(--ink-100)" />
-      <line x1={pad} y1={pad} x2={pad} y2={h - pad} stroke="var(--ink-100)" />
-      <polyline points={points} fill="none" stroke="var(--pussalla-green-600)" strokeWidth="2" />
-      {data.map((d, i) => (
-        <circle key={i} cx={x(i)} cy={y(d.total)} r="2.5" fill="var(--pussalla-green-600)" />
-      ))}
-    </svg>
+    <div>
+      {filtered.map((e, i) => {
+        const spark = (e.series || []).map((s) => s.amount);
+        return (
+          <div key={e.id} style={{ marginBottom: "0.65rem" }}>
+            <div className="spread" style={{ fontSize: "0.85rem" }}>
+              <span><strong>{i + 1}.</strong> {e.name} <span className="muted" style={{ fontSize: "0.76rem" }}>{e.code}</span></span>
+              <span className="row" style={{ alignItems: "center", gap: "0.55rem" }}>
+                {spark.length > 1 && <Sparkline data={spark} color={CHART_PALETTE[i % CHART_PALETTE.length]} />}
+                <span className="money"><strong>{formatMoney(e.total)}</strong></span>
+              </span>
+            </div>
+            <div className="bar-track" style={{ marginTop: "0.3rem" }}>
+              <div className="bar-fill bar-fill-static" style={{ width: `${(e.total / max) * 100}%` }} />
+            </div>
+            <div className="muted" style={{ fontSize: "0.74rem", marginTop: "0.15rem" }}>{e.divisionName || "—"}</div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

@@ -13,7 +13,7 @@ const NAV = [
   { to: "/tasks", label: "Task Management", roles: ["admin", "super_admin"] },
   { to: "/employees", label: "Employees", roles: ["hr", "admin", "super_admin"] },
   { to: "/cross-assignments", label: "Cross-Assignments", roles: ["hr", "super_admin"] },
-  { to: "/reports", label: "Reports", roles: ["hr", "admin", "super_admin"] },
+  { to: "/reports", label: "Reports", roles: ["hr", "admin", "super_admin", "supervisor"] },
   { to: "/audit", label: "Audit Trail", roles: ["super_admin"] },
 ];
 
@@ -76,7 +76,7 @@ export default function Layout({ children }) {
           <div className="row">
             <button className="menu-btn" onClick={() => setOpen((o) => !o)} aria-label="Toggle menu">☰ Menu</button>
             <div className="crumbs">
-              Pussalla Incentive System <strong>/ {roleLabel(user.role)}</strong>
+              Incentivize <strong>/ {roleLabel(user.role)}</strong>
             </div>
           </div>
           <div className="row">

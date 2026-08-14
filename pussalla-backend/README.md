@@ -1,6 +1,6 @@
-# Pussalla Incentive Salary & Task Management — Backend
+# Incentivize — Incentive Salary Pussalla Incentive Salary & Task Management — Backend Task Management Backend
 
-Node.js (Express) + PostgreSQL API that backs the Pussalla frontend with a real
+Node.js (Express) + PostgreSQL API that backs the Incentivize frontend with a real
 database, JWT-based multi-user auth, role-based access control, the three
 task calculation engines, and an append-only audit log.
 
@@ -93,7 +93,7 @@ task logs, and a few audit trail entries (including one flagged as a
 retroactive edit, so the Super Admin audit dashboard has something to show).
 
 Every seeded employee shares the same login password, set by
-`SEED_DEFAULT_PASSWORD` in `.env` (default `Pussalla@123`). Useful logins:
+`SEED_DEFAULT_PASSWORD` in `.env` (default `Incentivize@123`). Useful logins:
 
 | Role         | Employee code |
 |--------------|---------------|
@@ -110,7 +110,7 @@ npm run dev      # nodemon, auto-restarts on file changes
 npm start        # plain node
 ```
 
-You should see `Pussalla backend listening on http://localhost:4000`.
+You should see `Incentivize backend listening on http://localhost:4000`.
 
 ## Step 7 — Verify it's working
 
@@ -120,7 +120,7 @@ curl http://localhost:4000/api/health
 
 curl -X POST http://localhost:4000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"code":"EMP-001","password":"Pussalla@123"}'
+  -d '{"code":"EMP-001","password":"Incentivize@123"}'
 # returns { token, user }
 ```
 

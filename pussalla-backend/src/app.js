@@ -15,17 +15,12 @@ const dailyLogRoutes = require("./routes/dailyLogs");
 const auditLogRoutes = require("./routes/auditLogs");
 const reportRoutes = require("./routes/reports");
 
+const path = require("path");
+const fs = require("fs");
+
 const app = express();
 
 app.use(helmet());
-
-// Serve the built frontend (single origin in production)
-const path = require("path");
-if (process.env.SERVE_FRONTEND === "true") {
-  const dist = path.join(__dirname, "../../pussalla-frontend/dist");
-  app.use(express.static(dist));
-  app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(dist, "index.html")));
-}
 
 // CORS: in development allow any origin; in production require an explicit
 // CORS_ORIGIN (remove the wildcard fallback so the public demo isn't wide open).
@@ -48,7 +43,7 @@ const loginLimiter = rateLimit({
   message: { error: "Too many login attempts. Please try again later." },
 });
 
-app.get("/api/health", (req, res) => res.json({ ok: true, service: "pussalla-backend" }));
+app.get("/api/health", (req, res) => res.json({ ok: true, service: "incentivize-backend" }));
 
 app.use("/api/auth/login", loginLimiter);
 app.use("/api/auth", authRoutes);
@@ -60,18 +55,20 @@ app.use("/api/daily-logs", dailyLogRoutes);
 app.use("/api/audit-logs", auditLogRoutes);
 app.use("/api/reports", reportRoutes);
 
-// Optionally serve the built frontend (single origin → no CORS needed).
-// Set SERVE_FRONTEND=true and build pussalla-frontend/dist first.
-if (process.env.SERVE_FRONTEND === "true") {
-  const dist = path.join(__dirname, "..", "..", "pussalla-frontend", "dist");
-  app.use(express.static(dist));
-  app.get("*", (req, res, next) => {
-    if (req.path.startsWith("/api")) return next();
-    res.sendFile(path.join(dist, "index.html"));
+// Serve the built frontend from the same origin as the API (registered after
+// the API routes so /api/* always wins). The React build is bundled inside
+// pussalla-backend/public/ (committed) and rebuilt on install when the
+// frontend source is present. Served whenever public/index.html exists, so the
+// deploy "just works" with no SERVE_FRONTEND flag.
+const distDir = path.join(__dirname, "..", "public");
+if (fs.existsSync(path.join(distDir, "index.html"))) {
+  app.use(express.static(distDir));
+  // SPA fallback: any non-/api GET returns index.html (client-side routing).
+  app.get(/^\/(?!api).*/, (req, res, next) => {
+    if (req.method !== "GET") return next();
+    res.sendFile(path.join(distDir, "index.html"));
   });
 }
-
-
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 

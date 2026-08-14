@@ -37,7 +37,7 @@ function AppRoutes() {
         <Route path="/tasks" element={<RequireAuth roles={["admin"]}><TasksPage /></RequireAuth>} />
         <Route path="/employees" element={<RequireAuth roles={["hr", "admin"]}><EmployeesPage /></RequireAuth>} />
         <Route path="/cross-assignments" element={<RequireAuth roles={["hr"]}><CrossAssignmentsPage /></RequireAuth>} />
-        <Route path="/reports" element={<RequireAuth roles={["hr", "admin"]}><ReportsPage /></RequireAuth>} />
+        <Route path="/reports" element={<RequireAuth roles={["hr", "admin", "super_admin", "supervisor"]}><ReportsPage /></RequireAuth>} />
         <Route path="/audit" element={<RequireAuth roles={["super_admin"]}><AuditPage /></RequireAuth>} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFoundPage />} />

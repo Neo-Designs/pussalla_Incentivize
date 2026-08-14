@@ -1,0 +1,33 @@
+# Render Blueprint — deploys the Incentivize System as a single web service.
+# The backend serves the built React frontend from the same origin, so no separate
+# static site is needed. Build and start commands are defined here (no UI entry).
+#
+# Required environment variables (set in Render dashboard → Environment):
+#   DATABASE_URL   — Neon/Supabase/external Postgres connection string
+#   JWT_SECRET     — long random string (openssl rand -hex 32)
+#   JWT_EXPIRES_IN — e.g. 8h
+#   CORS_ORIGIN    — your public URL, e.g. https://incentivize.onrender.com
+#                    (leave empty to serve frontend + API from the same origin)
+services:
+  - type: web
+    name: incentivize
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: CORS_ORIGIN
+        sync: false

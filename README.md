@@ -1,8 +1,8 @@
-# Pussalla Incentivize System
+# Incentivize System
 
-A full-stack incentive salary & division task management platform for **Pussalla Farms**. Track daily output across all five divisions, calculate payouts with three task engines (individual flat-rate, group flat-rate pool, group daily-limit/tiered bonus), and keep a tamper-evident audit trail — all in one place.
+A full-stack incentive salary & division task management platform for **Incentivize**. Track daily output across all five divisions, calculate payouts with three task engines (individual flat-rate, group flat-rate pool, group daily-limit/tiered bonus), and keep a tamper-evident audit trail — all in one place.
 
-The UI is built with a Pussalla brand identity: deep poultry-green + harvest-gold on a warm cream canvas, with custom loading animations, glassmorphic surfaces, staggered entrance animations, and live status indicators.
+The UI is built with a Incentivize brand identity: deep poultry-green + harvest-gold on a warm cream canvas, with custom loading animations, glassmorphic surfaces, staggered entrance animations, and live status indicators.
 
 ---
 
@@ -21,7 +21,7 @@ The UI is built with a Pussalla brand identity: deep poultry-green + harvest-gol
 - **Pagination** — all list endpoints (employees, daily-logs, tasks, audit-logs) return `{rows, page, limit, total}` so the UI scales to thousands of records.
 - **Multi-company ready** — every customer runs an isolated PostgreSQL database; a `companies` table holds the tenant identity. See `docs/CUSTOMER_DATABASE_SETUP.md`.
 - **Audit trail** — every create/update/delete is logged. **Retroactive edits** (changes made after the original log date) are automatically flagged for super-admin review.
-- **Pussalla branding** — burgundy/red poultry-green + harvest-gold on a warm cream canvas, custom loading animations, glassmorphic surfaces, staggered entrance animations, and live status indicators.
+- **Incentivize branding** — burgundy/red poultry-green + harvest-gold on a warm cream canvas, custom loading animations, glassmorphic surfaces, staggered entrance animations, and live status indicators.
 
 ---
 
@@ -66,7 +66,7 @@ pussalla_Incentivize/
     ├── index.html           # Inter + JetBrains Mono fonts, theme color
     ├── vite.config.js       # Dev server + /api proxy → :4000
     ├── public/
-    │   └── pussalla-mark.svg
+    │   └── incentivize-mark.svg
     └── src/
         ├── main.jsx
         ├── App.jsx          # Router + protected routes
@@ -133,7 +133,7 @@ JWT_SECRET=run openssl rand -hex 32 and paste the output here
 JWT_EXPIRES_IN=8h
 PORT=4000
 CORS_ORIGIN=http://localhost:5173
-SEED_DEFAULT_PASSWORD=Pussalla@123
+SEED_DEFAULT_PASSWORD=Incentivize@123
 ```
 
 ### Step 4 — Install backend dependencies & seed the database
@@ -179,7 +179,7 @@ Browse to **http://localhost:5173** and sign in with a demo account.
 
 ## 🔑 Demo Logins
 
-The seed script creates 30 employees. **All share the password `Pussalla@123`.**
+The seed script creates 30 employees. **All share the password `Incentivize@123`.**
 
 | Code | Role | Notes |
 |------|------|-------|
@@ -210,7 +210,7 @@ The seed script creates 30 employees. **All share the password `Pussalla@123`.**
 
 The UI is built with hand-crafted CSS (no Tailwind / no component library) for a distinctive, non-generic aesthetic.
 
-- **Brand palette** — Pussalla green (`#124a24` → `#43a047`) + harvest gold (`#d4a017` → `#ffca28`) on warm cream surfaces (`#f1f5ef`).
+- **Brand palette** — Incentivize green (`#124a24` → `#43a047`) + harvest gold (`#d4a017` → `#ffca28`) on warm cream surfaces (`#f1f5ef`).
 - **Typography** — Inter for UI text, JetBrains Mono for codes/figures, with `tabular-nums` for money alignment.
 - **Glassmorphism** — translucent, blur-saturated sticky topbar.
 - **Custom loaders** — dual-ring spinner, bobbing "egg" loader (farm motif), shimmer skeletons, indeterminate progress bar.
@@ -223,35 +223,55 @@ All design tokens live in `pussalla-frontend/src/styles/theme.css` (`:root` cust
 
 ## 🏗️ Production Build & Deployment
 
-### One-command Docker stack (recommended)
+The backend builds and serves the React frontend from the **same origin**, so
+production is a single web service — no separate static site to configure.
 
-The repo ships with a production `Dockerfile` and `docker-compose.prod.yml`
-that build the React frontend and run the backend + Postgres in a single
-container stack — no separate frontend host needed.
+### Deploy to Render (recommended, zero build/start command entry)
+
+Build and start commands are encoded in `render.yaml` + the root `package.json`,
+so you don't type anything into Render's UI. See
+**`docs/RENDER_DEPLOY.md`** for the full step-by-step (Blueprint or manual).
+
+Quick version:
+```bash
+# 1. Apply schema + seed against your Postgres (Render/Neon/Supabase)
+cd pussalla-backend && cp .env.example .env   # set DATABASE_URL + JWT_SECRET
+npm install && npm run seed
+
+# 2. On Render: New → Blueprint (reads render.yaml), or New → Web Service with:
+#    Build:  npm install && npm run build
+#    Start:  npm start
+#    Env:    DATABASE_URL, JWT_SECRET, JWT_EXPIRES_IN, CORS_ORIGIN (leave empty)
+```
+
+### How the single-origin deploy works
+
+The built frontend is committed inside `pussalla-backend/public/` (never
+gitignored), so it is always present at runtime. A `postinstall` hook rebuilds
+it when the frontend source is checked out. `app.js` serves `public/` with an
+SPA fallback for client-side routes, and serves `/api/*` from Express — all on
+one port.
+
+### Docker stack
 
 ```bash
-cp pussalla-backend/.env.example .env   # then edit JWT_SECRET / PGPASSWORD / CORS_ORIGIN
+cp pussalla-backend/.env.example .env   # edit JWT_SECRET / PGPASSWORD
 docker compose -f docker-compose.prod.yml --env-file .env up --build -d
 docker compose exec app npm run seed    # load demo data (first run only)
 ```
-
-Open **http://localhost:4000**. The backend serves the built SPA from the
-same origin, so no CORS configuration is needed when `SERVE_FRONTEND=true`.
-
-> For a new customer database (Neon / Supabase / self-hosted), see
-> **`docs/CUSTOMER_DATABASE_SETUP.md`**.
+Open **http://localhost:4000**.
 
 ### Static frontend build only
 
-To produce a static production bundle of the frontend:
-
 ```bash
-cd pussalla-frontend
-npm run build        # outputs to dist/
-npm run preview      # serve the production build locally
+cd pussalla-frontend && npm run build   # outputs to dist/
 ```
+The built `dist/` can be served by any static host (set `CORS_ORIGIN` to its
+URL). Because the frontend calls relative `/api` paths, it resolves to the
+same origin in production.
 
-The built `dist/` can be served by any static host, or placed behind the Express backend / nginx. Because the frontend calls relative `/api` paths, it resolves to the same origin in production.
+> For a new customer database (Neon / Supabase / self-hosted), see
+> **`docs/CUSTOMER_DATABASE_SETUP.md`**.
 
 ---
 
@@ -309,4 +329,4 @@ The frontend was verified end-to-end against a live Postgres + backend instance:
 
 ---
 
-Built for the Pussalla floor — track output, pay fairly, stay accountable.
+Built for the Incentivize floor — track output, pay fairly, stay accountable.

@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS companies (
 );
 
 INSERT INTO companies (id, code, name)
-VALUES (1, 'PUSSALLA', 'Pussalla Farms (Demo)')
+VALUES (1, 'INCENTIVIZE', 'Incentivize (Demo)')
 ON CONFLICT (id) DO NOTHING;
 
 -- companies reference on divisions / employees (nullable for back-compat).

@@ -248,7 +248,7 @@ function downloadTemplate() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "pussalla-employee-template.csv";
+  a.download = "incentivize-employee-template.csv";
   a.click();
   URL.revokeObjectURL(url);
 }
