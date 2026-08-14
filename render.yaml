@@ -10,7 +10,7 @@
 #                    (leave empty to serve frontend + API from the same origin)
 services:
   - type: web
-    name: incentivize
+    name: pussalla-incentivize
     env: node
     region: singapore
     plan: free
