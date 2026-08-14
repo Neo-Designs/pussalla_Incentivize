@@ -1,8 +1,8 @@
-# Pussalla Incentivize System
+# Incentivize System
 
-A full-stack incentive salary & division task management platform for **Pussalla Farms**. Track daily output across all five divisions, calculate payouts with three task engines (individual flat-rate, group flat-rate pool, group daily-limit/tiered bonus), and keep a tamper-evident audit trail — all in one place.
+A full-stack incentive salary & division task management platform for **Incentivize**. Track daily output across all five divisions, calculate payouts with three task engines (individual flat-rate, group flat-rate pool, group daily-limit/tiered bonus), and keep a tamper-evident audit trail — all in one place.
 
-The UI is built with a Pussalla brand identity: deep poultry-green + harvest-gold on a warm cream canvas, with custom loading animations, glassmorphic surfaces, staggered entrance animations, and live status indicators.
+The UI is built with a Incentivize brand identity: deep poultry-green + harvest-gold on a warm cream canvas, with custom loading animations, glassmorphic surfaces, staggered entrance animations, and live status indicators.
 
 ---
 
@@ -21,7 +21,7 @@ The UI is built with a Pussalla brand identity: deep poultry-green + harvest-gol
 - **Pagination** — all list endpoints (employees, daily-logs, tasks, audit-logs) return `{rows, page, limit, total}` so the UI scales to thousands of records.
 - **Multi-company ready** — every customer runs an isolated PostgreSQL database; a `companies` table holds the tenant identity. See `docs/CUSTOMER_DATABASE_SETUP.md`.
 - **Audit trail** — every create/update/delete is logged. **Retroactive edits** (changes made after the original log date) are automatically flagged for super-admin review.
-- **Pussalla branding** — burgundy/red poultry-green + harvest-gold on a warm cream canvas, custom loading animations, glassmorphic surfaces, staggered entrance animations, and live status indicators.
+- **Incentivize branding** — burgundy/red poultry-green + harvest-gold on a warm cream canvas, custom loading animations, glassmorphic surfaces, staggered entrance animations, and live status indicators.
 
 ---
 
@@ -66,7 +66,7 @@ pussalla_Incentivize/
     ├── index.html           # Inter + JetBrains Mono fonts, theme color
     ├── vite.config.js       # Dev server + /api proxy → :4000
     ├── public/
-    │   └── pussalla-mark.svg
+    │   └── incentivize-mark.svg
     └── src/
         ├── main.jsx
         ├── App.jsx          # Router + protected routes
@@ -133,7 +133,7 @@ JWT_SECRET=run openssl rand -hex 32 and paste the output here
 JWT_EXPIRES_IN=8h
 PORT=4000
 CORS_ORIGIN=http://localhost:5173
-SEED_DEFAULT_PASSWORD=Pussalla@123
+SEED_DEFAULT_PASSWORD=Incentivize@123
 ```
 
 ### Step 4 — Install backend dependencies & seed the database
@@ -179,7 +179,7 @@ Browse to **http://localhost:5173** and sign in with a demo account.
 
 ## 🔑 Demo Logins
 
-The seed script creates 30 employees. **All share the password `Pussalla@123`.**
+The seed script creates 30 employees. **All share the password `Incentivize@123`.**
 
 | Code | Role | Notes |
 |------|------|-------|
@@ -210,7 +210,7 @@ The seed script creates 30 employees. **All share the password `Pussalla@123`.**
 
 The UI is built with hand-crafted CSS (no Tailwind / no component library) for a distinctive, non-generic aesthetic.
 
-- **Brand palette** — Pussalla green (`#124a24` → `#43a047`) + harvest gold (`#d4a017` → `#ffca28`) on warm cream surfaces (`#f1f5ef`).
+- **Brand palette** — Incentivize green (`#124a24` → `#43a047`) + harvest gold (`#d4a017` → `#ffca28`) on warm cream surfaces (`#f1f5ef`).
 - **Typography** — Inter for UI text, JetBrains Mono for codes/figures, with `tabular-nums` for money alignment.
 - **Glassmorphism** — translucent, blur-saturated sticky topbar.
 - **Custom loaders** — dual-ring spinner, bobbing "egg" loader (farm motif), shimmer skeletons, indeterminate progress bar.
@@ -329,4 +329,4 @@ The frontend was verified end-to-end against a live Postgres + backend instance:
 
 ---
 
-Built for the Pussalla floor — track output, pay fairly, stay accountable.
+Built for the Incentivize floor — track output, pay fairly, stay accountable.

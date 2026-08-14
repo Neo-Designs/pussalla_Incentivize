@@ -1,4 +1,4 @@
-# Render Blueprint — deploys the Pussalla Incentive System as a single web service.
+# Render Blueprint — deploys the Incentivize System as a single web service.
 # The backend serves the built React frontend from the same origin, so no separate
 # static site is needed. Build and start commands are defined here (no UI entry).
 #
@@ -6,11 +6,11 @@
 #   DATABASE_URL   — Neon/Supabase/external Postgres connection string
 #   JWT_SECRET     — long random string (openssl rand -hex 32)
 #   JWT_EXPIRES_IN — e.g. 8h
-#   CORS_ORIGIN    — your public URL, e.g. https://pussalla-incentivize.onrender.com
+#   CORS_ORIGIN    — your public URL, e.g. https://incentivize.onrender.com
 #                    (leave empty to serve frontend + API from the same origin)
 services:
   - type: web
-    name: pussalla-incentivize
+    name: incentivize
     env: node
     region: singapore
     plan: free

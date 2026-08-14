@@ -43,7 +43,7 @@ const loginLimiter = rateLimit({
   message: { error: "Too many login attempts. Please try again later." },
 });
 
-app.get("/api/health", (req, res) => res.json({ ok: true, service: "pussalla-backend" }));
+app.get("/api/health", (req, res) => res.json({ ok: true, service: "incentivize-backend" }));
 
 app.use("/api/auth/login", loginLimiter);
 app.use("/api/auth", authRoutes);

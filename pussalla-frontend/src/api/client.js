@@ -147,12 +147,14 @@ export const dailyLogsApi = {
 
 // ---- reports ----------------------------------------------------------
 export const reportsApi = {
-  daily: (date) => api.get(`/api/reports/daily?date=${encodeURIComponent(date)}`),
-  monthly: (month) => api.get(`/api/reports/monthly?month=${encodeURIComponent(month)}`),
+  daily: (date, divisionId) => api.get("/api/reports/daily" + qs({ date, divisionId })),
+  monthly: (month, divisionId) => api.get("/api/reports/monthly" + qs({ month, divisionId })),
   monthlyEmployee: (employeeId, month) =>
     api.get(`/api/reports/monthly/${employeeId}?month=${encodeURIComponent(month)}`),
+  employeeGrid: (employeeId, month) =>
+    api.get(`/api/reports/employee-grid/${employeeId}?month=${encodeURIComponent(month)}`),
   myEarnings: (from, to) => api.get("/api/reports/my-earnings" + qs({ from, to })),
-  analytics: (from, to) => api.get("/api/reports/analytics" + qs({ from, to })),
+  analytics: (from, to, divisionId) => api.get("/api/reports/analytics" + qs({ from, to, divisionId })),
   exportMonthlyCsv: (month) => api.get(`/api/reports/monthly.csv?month=${encodeURIComponent(month)}`),
   exportDailyCsv: (date) => api.get(`/api/reports/daily.csv?date=${encodeURIComponent(date)}`),
   payslipPdf: (employeeId, month) =>

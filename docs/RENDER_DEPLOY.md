@@ -63,7 +63,7 @@ Demo login: **EMP-001** / `Pussalla@123`.
 
 ### 4. Open the app
 After deploy, open the Render URL (e.g.
-`https://pussalla-incentivize.onrender.com`). The login page appears — sign in
+`https://incentivize.onrender.com`). The login page appears — sign in
 with **EMP-001** / `Pussalla@123`.
 
 ---

@@ -1,5 +1,5 @@
 /**
- * Seeds the database with the same demo dataset used in the Pussalla
+ * Seeds the database with the same demo dataset used in the Incentivize
  * frontend prototype: 5 divisions, 30 employees, 11 tasks, a handful of
  * cross-assignments, and ~20 days of daily task logs.
  *
@@ -11,7 +11,7 @@ const { pool } = require("./db");
 const { calcEngine } = require("./utils/calcEngine");
 const { writeAudit } = require("./utils/audit");
 
-const DEFAULT_PASSWORD = process.env.SEED_DEFAULT_PASSWORD || "Pussalla@123";
+const DEFAULT_PASSWORD = process.env.SEED_DEFAULT_PASSWORD || "Incentivize@123";
 
 const DIVISIONS = [
   { code: "PPA", name: "Processing Plant A", description: "Poultry deboning, packing & dispatch" },

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import Card, { PageHead, KPI, EmptyState, Badge, SkeletonRows } from "../components/Card.jsx";
+import Reveal from "../components/Reveal.jsx";
 import { reportsApi } from "../api/client";
 import { downloadBlob } from "../api/client";
 import { formatMoney, formatNumber, formatDate, taskTypeLabel, currentMonthISO } from "../utils/helpers";
@@ -40,7 +41,7 @@ export default function EarningsPage() {
     });
     rows.push([]);
     rows.push(["", "", "", "", "TOTAL", monthTotal.toFixed(2)]);
-    downloadCsv(`pussalla-earnings-${month}.csv`, rows);
+    downloadCsv(`incentivize-earnings-${month}.csv`, rows);
   };
 
   const exportPayslip = async () => {
@@ -68,8 +69,9 @@ export default function EarningsPage() {
         <KPI tone="blue" label="Avg / Log" value={formatMoney(items.length ? monthTotal / items.length : 0)} sub="this month" />
       </div>
 
-      <div className="grid stagger" style={{ gridTemplateColumns: "1fr 2fr", marginBottom: "1rem" }}>
-        <Card>
+      <Reveal>
+        <div className="grid stagger" style={{ gridTemplateColumns: "1fr 2fr", marginBottom: "1rem" }}>
+          <Card>
           <h3 className="section-title">Per-task breakdown</h3>
           {loading ? (
             <table className="data"><tbody><SkeletonRows cols={2} /></tbody></table>
@@ -120,7 +122,8 @@ export default function EarningsPage() {
             </table>
           )}
         </Card>
-      </div>
+        </div>
+      </Reveal>
     </>
   );
 }

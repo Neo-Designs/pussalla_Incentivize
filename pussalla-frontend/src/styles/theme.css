@@ -1,12 +1,12 @@
 /* ============================================================
-   Pussalla brand theme
-   Primary  -> deep poultry-green (the Pussalla farm identity)
+   Incentivize brand theme
+   Primary  -> deep poultry-green (the Incentivize identity)
    Accent   -> harvest gold / amber (incentive payout warmth)
    Surfaces -> warm cream & white cards on a soft sage canvas
    ============================================================ */
 
 :root {
-  /* ---- Pussalla brand palette ----
+  /* ---- Incentivize brand palette ----
      #FFFFFF  surface white
      #CDC7BD  warm beige (canvas / borders / muted)
      #590707  deep burgundy  (primary dark)
@@ -232,7 +232,7 @@ table.data tbody tr { transition: background 0.15s var(--ease); }
 table.data tbody tr:hover { background: var(--surface-2); }
 table.data tbody tr:last-child td { border-bottom: none; }
 
-/* ---- Pussalla custom loading animations ---- */
+/* ---- Incentivize custom loading animations ---- */
 
 .pussalla-spinner {
   --c: var(--pussalla-green-600);

@@ -1,5 +1,5 @@
 -- ============================================================
--- Pussalla Incentive Salary & Division Task Management System
+-- Incentivize — Incentive Salary Pussalla Incentive Salary & Division Task Management System Division Task Management System
 -- PostgreSQL schema
 -- Run with: psql -U <user> -d pussalla -f src/schema.sql
 -- ============================================================
@@ -155,7 +155,7 @@ CREATE TABLE companies (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-INSERT INTO companies (id, code, name) VALUES (1, 'PUSSALLA', 'Pussalla Farms (Demo)') ON CONFLICT (id) DO NOTHING;
+INSERT INTO companies (id, code, name) VALUES (1, 'INCENTIVIZE', 'Incentivize (Demo)') ON CONFLICT (id) DO NOTHING;
 
 ALTER TABLE divisions  ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id) DEFAULT 1;
 ALTER TABLE employees  ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id) DEFAULT 1;

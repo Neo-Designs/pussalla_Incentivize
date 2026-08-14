@@ -2,7 +2,7 @@
   "name": "pussalla-incentivize",
   "version": "1.0.0",
   "private": true,
-  "description": "Pussalla Incentive Salary & Task Management System — monorepo root. Deploy the backend (pussalla-backend), which builds and serves the React frontend from the same origin.",
+  "description": "Incentivize \u2014 Incentive Salary & Task Management System \u2014 monorepo root. Deploy the backend (pussalla-backend), which builds and serves the React frontend from the same origin.",
   "scripts": {
     "install:frontend": "cd pussalla-frontend && npm install",
     "build": "cd pussalla-frontend && npm install && npm run build && node ../pussalla-backend/scripts/build-frontend.js",

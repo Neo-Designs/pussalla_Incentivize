@@ -1,7 +1,7 @@
 # Customer Database Setup Guide
 
 This guide walks you through provisioning a fresh PostgreSQL database for a new
-Pussalla Incentive System customer and getting the app running against it.
+Incentivize customer and getting the app running against it.
 
 The system is **multi-company-ready**: every customer runs an isolated database
 with their own employees, divisions and tasks. There is no shared multi-tenant
