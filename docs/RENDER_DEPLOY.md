@@ -32,7 +32,12 @@ node -e "require('dotenv').config();const{pool}=require('./src/db');const fs=req
 npm run seed
 ```
 
-Demo login: **EMP-001** / `Pussalla@123`.
+Demo login: **EMP-001** / `Incentivize@123`.
+
+> **Already deployed and want to switch existing accounts to the new password?**
+> After applying schema, run `PASSWORD=Incentivize@123 npm run reset-passwords`
+> (from `pussalla-backend`) against the same `DATABASE_URL`. This re-hashes every
+> employee row to the new password without re-seeding demo data.
 
 ### 3. Deploy the web service on Render
 
@@ -64,7 +69,7 @@ Demo login: **EMP-001** / `Pussalla@123`.
 ### 4. Open the app
 After deploy, open the Render URL (e.g.
 `https://incentivize.onrender.com`). The login page appears — sign in
-with **EMP-001** / `Pussalla@123`.
+with **EMP-001** / `Incentivize@123`.
 
 ---
 

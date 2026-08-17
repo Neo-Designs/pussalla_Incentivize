@@ -48,9 +48,6 @@ function sendPayslipPdf(res, data) {
 
   // Task x date grid — the primary breakdown. Rendered as a compact table.
   if (gridRows.length) {
-    doc.fontSize(12).fillColor("#590707").text("Daily task breakdown (rows = tasks, columns = dates)", { underline: true });
-    doc.moveDown(0.3);
-
     const pageW = 545 - 50; // usable width between margins
     const labelW = 150;
     const totalW = 65;
@@ -58,6 +55,10 @@ function sendPayslipPdf(res, data) {
     const colCount = dates.length;
     const colW = colCount > 0 ? gridW / colCount : 0;
     const rowH = 16;
+
+    doc.fontSize(12).fillColor("#590707").text("Daily task breakdown (rows = tasks, columns = dates)", { underline: true });
+    doc.fontSize(7).fillColor("#736D66").text("Each cell shows the number of times the task was done and the payout: count×amount (e.g. 2×90 = done twice, Rs. 90 total).", { width: pageW });
+    doc.moveDown(0.3);
 
     const rowTop = doc.y;
     // Header row: "Task" + day numbers + "Total"
@@ -76,10 +77,15 @@ function sendPayslipPdf(res, data) {
       doc.fontSize(7).fillColor("#04090C");
       doc.text(t.task.length > 22 ? t.task.slice(0, 21) + "…" : t.task, 50, yy, { width: labelW });
       dates.forEach((d, i) => {
-        const amt = t.days[d];
-        if (amt) doc.text(Number(amt).toFixed(0), 50 + labelW + i * colW, yy, { width: colW, align: "center" });
+        const cell = t.days[d];
+        if (cell) {
+          const count = cell.count || (typeof cell === "number" ? null : 0);
+          const amt = typeof cell === "number" ? cell : Number(cell.amount);
+          const label = count && count > 1 ? `${count}×${amt.toFixed(0)}` : `${amt.toFixed(0)}`;
+          doc.text(label, 50 + labelW + i * colW, yy, { width: colW, align: "center" });
+        }
       });
-      const rowTotal = Object.values(t.days).reduce((s, v) => s + v, 0);
+      const rowTotal = Object.values(t.days).reduce((s, v) => s + (typeof v === "number" ? v : Number(v.amount)), 0);
       doc.fillColor("#590707").text(Number(rowTotal).toFixed(2), 50 + labelW + gridW, yy, { width: totalW, align: "right" });
       doc.fillColor("#04090C");
       yy += rowH;

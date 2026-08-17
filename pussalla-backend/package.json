@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node src/seed.js",
+    "reset-passwords": "node scripts/reset-passwords.js",
     "build:frontend": "node scripts/build-frontend.js",
     "postinstall": "node scripts/build-frontend.js"
   },

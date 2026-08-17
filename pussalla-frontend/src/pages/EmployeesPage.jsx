@@ -7,7 +7,7 @@ import { MiniSpinner } from "../components/Loaders.jsx";
 import { employeesApi, divisionsApi } from "../api/client";
 import { formatMoney, roleLabel, initials, hasRole } from "../utils/helpers";
 
-const ROLES = ["employee", "supervisor", "hr", "admin"];
+const ROLES = ["employee", "supervisor", "hr", "admin", "super_admin"];
 
 const CSV_TEMPLATE = `code,name,role,divisionId,password
 EMP-031,Sample Employee,employee,1,TempPass123
@@ -112,7 +112,7 @@ export default function EmployeesPage() {
                     </div>
                   </td>
                   <td className="mono">{emp.code}</td>
-                  <td><Badge tone={emp.role === "supervisor" ? "green" : emp.role === "hr" ? "blue" : emp.role === "admin" ? "gold" : "grey"}>{roleLabel(emp.role)}</Badge></td>
+                  <td><Badge tone={emp.role === "super_admin" ? "red" : emp.role === "supervisor" ? "green" : emp.role === "hr" ? "blue" : emp.role === "admin" ? "gold" : "grey"}>{roleLabel(emp.role)}</Badge></td>
                   <td>{divName(emp.home_division_id)}</td>
                   <td>{emp.active === false ? <Badge tone="red">Inactive</Badge> : <Badge tone="green">Active</Badge>}</td>
                   <td>
@@ -131,7 +131,7 @@ export default function EmployeesPage() {
       </Card>
 
       {modalOpen && (
-        <EmployeeModal divisions={divisions} editTarget={editTarget} onSaved={() => { setModalOpen(false); setEditTarget(null); load(); }} onClose={() => { setModalOpen(false); setEditTarget(null); }} />
+        <EmployeeModal divisions={divisions} editTarget={editTarget} user={user} onSaved={() => { setModalOpen(false); setEditTarget(null); load(); }} onClose={() => { setModalOpen(false); setEditTarget(null); }} />
       )}
 
       {importOpen && (
@@ -155,26 +155,33 @@ export default function EmployeesPage() {
   );
 }
 
-function EmployeeModal({ divisions, editTarget, onSaved, onClose }) {
+function EmployeeModal({ divisions, editTarget, user, onSaved, onClose }) {
   const toast = useToast();
   const isEdit = !!editTarget;
+  const isSuperAdmin = hasRole(user, "super_admin");
   const [code, setCode] = useState(editTarget?.code || "");
   const [name, setName] = useState(editTarget?.name || "");
   const [homeDivisionId, setHomeDivisionId] = useState(editTarget?.home_division_id || "");
   const [role, setRole] = useState(editTarget?.role || "employee");
   const [password, setPassword] = useState("");
+  const [resetPassword, setResetPassword] = useState(false);
   const [active, setActive] = useState(editTarget?.active !== false);
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
     if (isEdit) {
       if (!name) { toast.error("Name is required"); return; }
+      if (resetPassword && !password) { toast.error("Enter a new password"); return; }
       setSaving(true);
       try {
         await employeesApi.update(editTarget.id, {
-          name, homeDivisionId: homeDivisionId ? Number(homeDivisionId) : null, role, active,
+          name,
+          homeDivisionId: homeDivisionId ? Number(homeDivisionId) : null,
+          role,
+          active,
+          password: resetPassword && password ? password : undefined,
         });
-        toast.success("Employee updated");
+        toast.success(resetPassword ? "Employee updated & password reset" : "Employee updated");
         onSaved();
       } catch (e) { toast.error(e.message); } finally { setSaving(false); }
     } else {
@@ -230,7 +237,18 @@ function EmployeeModal({ divisions, editTarget, onSaved, onClose }) {
           </div>
         )}
         {isEdit && (
-          <div style={{ gridColumn: "1 / -1" }} className="row">
+          <div style={{ gridColumn: "1 / -1" }}>
+            {isSuperAdmin && (
+              <div style={{ marginBottom: "0.6rem" }}>
+                <label className="row" style={{ fontSize: "0.88rem", gap: "0.4rem" }}>
+                  <input type="checkbox" checked={resetPassword} onChange={(e) => setResetPassword(e.target.checked)} style={{ width: "auto" }} />
+                  Reset password
+                </label>
+                {resetPassword && (
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="New password" style={{ marginTop: "0.4rem" }} />
+                )}
+              </div>
+            )}
             <label className="row" style={{ fontSize: "0.88rem", gap: "0.4rem" }}>
               <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} style={{ width: "auto" }} />
               Active (can sign in)
@@ -238,7 +256,7 @@ function EmployeeModal({ divisions, editTarget, onSaved, onClose }) {
           </div>
         )}
       </div>
-      {isEdit && <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.8rem" }}>Role and division changes are audited. To reset a password, contact an administrator.</p>}
+      {isEdit && <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.8rem" }}>{isSuperAdmin ? "Role, division and password changes are audited." : "Role and division changes are audited. Only a super admin can reset passwords."}</p>}
     </Modal>
   );
 }

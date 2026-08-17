@@ -215,6 +215,95 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
 });
 
 
+// GET /api/reports/all-employee-grid?month=2026-08&divisionId=
+// Returns a task x date grid for EVERY employee in scope (all, or filtered by
+// division). Each employee carries their own list of task rows; each task row
+// has per-day cells { count, output, amount }. The employee name/code cell
+// is meant to be rowspan-merged across the employee's task rows on the
+// client. Used by the all-employee work-breakdown grid on the Reports page.
+router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  const { month, divisionId } = req.query;
+  if (!month) return res.status(400).json({ error: "month query param is required (YYYY-MM)" });
+
+  const [y, m] = month.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  const dates = [];
+  for (let d = 1; d <= lastDay; d++) dates.push(`${month}-${String(d).padStart(2, "0")}`);
+
+  const clauses = ["to_char(l.log_date, 'YYYY-MM') = $1"];
+  const params = [month];
+  if (divisionId) { params.push(divisionId); clauses.push(`l.division_id = $${params.length}`); }
+  const where = clauses.join(" AND ");
+
+  const { rows } = await pool.query(
+    `SELECT e.id AS employee_id, e.code, e.name, d.name AS division_name,
+            t.id AS task_id, t.name AS task, t.task_type, t.unit,
+            l.log_date AS date, l.total_output, p.share_amount AS amount
+     FROM task_participants p
+     JOIN daily_task_logs l ON l.id = p.daily_task_log_id
+     JOIN tasks t ON t.id = l.task_id
+     JOIN employees e ON e.id = p.employee_id
+     LEFT JOIN divisions d ON d.id = e.home_division_id
+     WHERE ${where}
+     ORDER BY e.id, t.name, l.log_date`,
+    params
+  );
+
+  // Also include employees with no logs this month so the grid shows everyone
+  // (name/code merged cell) rather than only those who earned something.
+  const empParams = [];
+  const empClauses = [];
+  if (divisionId) { empParams.push(divisionId); empClauses.push(`home_division_id = $${empParams.length}`); }
+  const empWhere = empClauses.length ? `WHERE ${empClauses.join(" AND ")}` : "";
+  const { rows: allEmps } = await pool.query(
+    `SELECT e.id, e.code, e.name, d.name AS division_name
+     FROM employees e LEFT JOIN divisions d ON d.id = e.home_division_id
+     ${empWhere} ORDER BY e.id`,
+    empParams
+  );
+
+  const byEmp = new Map();
+  for (const e of allEmps) {
+    byEmp.set(e.id, {
+      employeeId: e.id, code: e.code, name: e.name,
+      divisionName: e.division_name, total: 0, tasks: [],
+    });
+  }
+
+  const taskIndex = new Map(); // employeeId -> taskId -> task obj
+  for (const r of rows) {
+    const emp = byEmp.get(r.employee_id);
+    if (!emp) continue;
+    if (!taskIndex.has(r.employee_id)) taskIndex.set(r.employee_id, new Map());
+    const ti = taskIndex.get(r.employee_id);
+    if (!ti.has(r.task_id)) {
+      ti.set(r.task_id, {
+        taskId: r.task_id, task: r.task, taskType: r.task_type, unit: r.unit,
+        days: {}, taskTotal: 0,
+      });
+    }
+    const t = ti.get(r.task_id);
+    const dayKey = String(r.date).slice(0, 10);
+    if (!t.days[dayKey]) t.days[dayKey] = { count: 0, output: 0, amount: 0 };
+    t.days[dayKey].count += 1;
+    t.days[dayKey].output += Number(r.total_output);
+    t.days[dayKey].amount += Number(r.amount);
+    t.taskTotal += Number(r.amount);
+    emp.total += Number(r.amount);
+  }
+
+  for (const [empId, ti] of taskIndex) {
+    const emp = byEmp.get(empId);
+    emp.tasks = [...ti.values()].sort((a, b) => b.taskTotal - a.taskTotal);
+  }
+
+  res.json({
+    month, dates,
+    employees: [...byEmp.values()],
+    grandTotal: [...byEmp.values()].reduce((s, e) => s + e.total, 0),
+  });
+});
+
 // GET /api/reports/monthly.csv?month=2026-08
 router.get("/monthly.csv", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
   const { month } = req.query;
@@ -263,6 +352,8 @@ router.get("/payslip.pdf", requireAuth, async (req, res) => {
   const items = rows.map((r) => ({ date: r.date, task: r.task, amount: Number(r.amount) }));
 
   // Build the task x date grid: rows = tasks, columns = every day in the month.
+  // Each cell stores both the number of times the task was logged (count) and
+  // the payout amount, so the payslip can show "how many" and "how much".
   const [y, m] = month.split("-").map(Number);
   const lastDay = new Date(y, m, 0).getDate();
   const dates = [];
@@ -273,7 +364,9 @@ router.get("/payslip.pdf", requireAuth, async (req, res) => {
     const key = r.task;
     if (!taskMap[key]) { taskMap[key] = { task: r.task, unit: r.unit, days: {} }; taskTotals[key] = 0; }
     const dk = String(r.date).slice(0, 10);
-    taskMap[key].days[dk] = (taskMap[key].days[dk] || 0) + Number(r.amount);
+    if (!taskMap[key].days[dk]) taskMap[key].days[dk] = { count: 0, amount: 0 };
+    taskMap[key].days[dk].count += 1;
+    taskMap[key].days[dk].amount += Number(r.amount);
     taskTotals[key] += Number(r.amount);
   }
   const taskBreakdown = Object.entries(taskTotals)

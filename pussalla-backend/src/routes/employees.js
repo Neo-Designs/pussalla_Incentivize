@@ -41,10 +41,13 @@ router.get("/", requireAuth, async (req, res) => {
 });
 
 // POST /api/employees  (HR, Admin, Super Admin)
-router.post("/", requireAuth, requireRole("hr", "admin"), async (req, res) => {
+router.post("/", requireAuth, requireRole("hr", "admin", "super_admin"), async (req, res) => {
   const { code, name, homeDivisionId, role, password } = req.body;
   if (!code || !name || !password) {
     return res.status(400).json({ error: "code, name and password are required" });
+  }
+  if (role && !VALID_ROLES.includes(role) && role !== "super_admin") {
+    return res.status(400).json({ error: `invalid role '${role}'` });
   }
   const client = await pool.connect();
   try {
@@ -60,7 +63,7 @@ router.post("/", requireAuth, requireRole("hr", "admin"), async (req, res) => {
     await writeAudit(client, {
       action: "CREATE", entity: "employees", entityId: emp.id,
       divisionId: emp.home_division_id, actorId: req.user.id,
-      oldValues: null, newValues: emp, note: "Employee added via HR module",
+      oldValues: null, newValues: emp, note: "Employee added via HR/Admin module",
     });
     await client.query("COMMIT");
     res.status(201).json(emp);
@@ -74,10 +77,19 @@ router.post("/", requireAuth, requireRole("hr", "admin"), async (req, res) => {
   }
 });
 
-// PUT /api/employees/:id
-router.put("/:id", requireAuth, requireRole("hr", "admin"), async (req, res) => {
+// PUT /api/employees/:id  (HR, Admin, Super Admin)
+// Accepts an optional `password` field: when provided (non-empty), the
+// employee's password is reset. Only super_admin may change another user's
+// password; hr/admin may edit profile fields but not set passwords here.
+router.put("/:id", requireAuth, requireRole("hr", "admin", "super_admin"), async (req, res) => {
   const { id } = req.params;
-  const { name, homeDivisionId, role, active } = req.body;
+  const { name, homeDivisionId, role, active, password } = req.body;
+  if (role && !VALID_ROLES.includes(role) && role !== "super_admin") {
+    return res.status(400).json({ error: `invalid role '${role}'` });
+  }
+  if (password !== undefined && password !== "" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Only super admin can reset passwords" });
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -97,10 +109,18 @@ router.put("/:id", requireAuth, requireRole("hr", "admin"), async (req, res) => 
       [name, homeDivisionId, role, active, id]
     );
     const after = rows[0];
+
+    // Reset password when a new one was supplied (super admin only).
+    if (password !== undefined && password !== "") {
+      const passwordHash = await bcrypt.hash(password, 10);
+      await client.query("UPDATE employees SET password_hash = $1, updated_at = now() WHERE id = $2", [passwordHash, id]);
+    }
+
     await writeAudit(client, {
       action: "UPDATE", entity: "employees", entityId: after.id,
       divisionId: after.home_division_id, actorId: req.user.id,
-      oldValues: before, newValues: after, note: "Employee record updated by HR/Admin",
+      oldValues: before, newValues: { ...after, passwordReset: !!(password) },
+      note: password ? "Employee record + password updated by HR/Admin/Super Admin" : "Employee record updated by HR/Admin/Super Admin",
     });
     await client.query("COMMIT");
     res.json(after);
@@ -108,6 +128,35 @@ router.put("/:id", requireAuth, requireRole("hr", "admin"), async (req, res) => 
     await client.query("ROLLBACK");
     console.error(err);
     res.status(500).json({ error: "Failed to update employee" });
+  } finally {
+    client.release();
+  }
+});
+
+// PATCH /api/employees/:id/password  (Super Admin only) — reset a user's password.
+router.patch("/:id/password", requireAuth, requireRole("super_admin"), async (req, res) => {
+  const { id } = req.params;
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: "password is required" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: existingRows } = await client.query("SELECT id, code, name FROM employees WHERE id=$1", [id]);
+    if (!existingRows[0]) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Not found" }); }
+    const passwordHash = await bcrypt.hash(password, 10);
+    await client.query("UPDATE employees SET password_hash = $1, updated_at = now() WHERE id = $2", [passwordHash, id]);
+    await writeAudit(client, {
+      action: "UPDATE", entity: "employees", entityId: Number(id),
+      divisionId: null, actorId: req.user.id,
+      oldValues: null, newValues: { passwordReset: true },
+      note: `Password reset for ${existingRows[0].code} by super admin`,
+    });
+    await client.query("COMMIT");
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Failed to reset password" });
   } finally {
     client.release();
   }

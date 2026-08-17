@@ -325,6 +325,23 @@
 .grid-breakdown .row-total { color: var(--pussalla-green-700); font-weight: 800; }
 .grid-breakdown tfoot td { font-weight: 800; background: var(--canvas-2); }
 
+/* Stacked count + amount cell content */
+.cell-stack { display: inline-flex; flex-direction: column; line-height: 1.05; }
+.cell-stack .cell-count { font-size: 0.66rem; color: var(--ink-500); font-weight: 600; }
+.cell-stack .cell-amt { font-size: 0.78rem; font-weight: 800; color: var(--pussalla-green-700); }
+.cell-tick { color: var(--pussalla-green-600); font-weight: 900; font-size: 0.9rem; }
+.cell-empty { background: transparent; }
+
+/* All-employee work breakdown grid: merged employee cell + sticky left cols */
+.all-employee-grid .emp-col { min-width: 150px; text-align: left; vertical-align: middle; background: var(--surface); }
+.all-employee-grid .task-col { min-width: 150px; text-align: left; }
+.all-employee-grid .row-total-col, .all-employee-grid .emp-total-col { min-width: 92px; }
+.all-employee-grid .emp-total { vertical-align: middle; background: var(--surface-2); color: var(--pussalla-green-700); }
+/* Keep the employee + task columns pinned while scrolling dates horizontally */
+.all-employee-grid th:nth-child(1), .all-employee-grid td.emp-col { position: sticky; left: 0; z-index: 3; }
+.all-employee-grid th:nth-child(2), .all-employee-grid td.task-col { position: sticky; left: 150px; z-index: 3; background: var(--surface); }
+.all-employee-grid .emp-col { z-index: 4; } /* merged cell above task cell */
+
 /* ---------- Audit / flagged ---------- */
 .flag-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px var(--danger-bg); animation: ps-pulse-soft 2s ease-in-out infinite; }
 @keyframes ps-pulse-soft { 0%, 100% { box-shadow: 0 0 0 3px var(--danger-bg); } 50% { box-shadow: 0 0 0 6px var(--danger-bg); } }
