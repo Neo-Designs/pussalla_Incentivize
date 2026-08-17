@@ -57,6 +57,7 @@ export default function ReportsPage() {
   const [employees, setEmployees] = useState([]);
   const [allGrid, setAllGrid] = useState(null);
   const [allGridLoading, setAllGridLoading] = useState(false);
+  const [breakdownDivision, setBreakdownDivision] = useState("");
 
   const isSupervisor = user.role === "supervisor";
 
@@ -114,7 +115,7 @@ export default function ReportsPage() {
     setAllGridLoading(true);
     (async () => {
       try {
-        const r = await reportsApi.allEmployeeGrid(month, divisionFilter || undefined);
+        const r = await reportsApi.allEmployeeGrid(month, breakdownDivision || undefined);
         if (active) setAllGrid(r);
       } catch {
         if (active) setAllGrid(null);
@@ -123,7 +124,7 @@ export default function ReportsPage() {
       }
     })();
     return () => { active = false; };
-  }, [tab, month, divisionFilter]);
+  }, [tab, month, breakdownDivision]);
 
   const exportDailyCsv = async () => {
     const blob = await reportsApi.exportDailyCsv(day);
@@ -334,6 +335,10 @@ export default function ReportsPage() {
             <Card>
               <div className="spread" style={{ marginBottom: "0.8rem" }}>
                 <h3 className="section-title" style={{ margin: 0 }}>All-employee work breakdown — {month}</h3>
+                <select value={breakdownDivision} onChange={(e) => setBreakdownDivision(e.target.value)} style={{ width: "auto" }}>
+                  <option value="">All divisions</option>
+                  {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
               </div>
               <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0, marginBottom: "0.6rem" }}>
                 Every employee is listed with their tasks as rows and dates (1–{(allGrid?.dates?.length) || 0}) as columns.

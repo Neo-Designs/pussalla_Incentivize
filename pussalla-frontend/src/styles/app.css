@@ -81,17 +81,6 @@
 }
 
 .main { display: flex; flex-direction: column; min-width: 0; }
-.topbar {
-  position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 0.85rem 1.6rem;
-  background: rgba(255,255,255,0.78);
-  backdrop-filter: blur(14px) saturate(1.4);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  border-bottom: 1px solid var(--ink-100);
-}
-.topbar .crumbs { font-size: 0.8rem; color: var(--ink-500); }
-.topbar .crumbs strong { color: var(--ink-900); }
 .content { padding: 1.6rem; max-width: var(--maxw); width: 100%; margin: 0 auto; animation: ps-fade-in 0.3s var(--ease-out); }
 
 .page-head { margin-bottom: 1.3rem; animation: ps-rise 0.4s var(--ease-out) both; }
@@ -431,7 +420,7 @@
   .sidebar { position: fixed; left: -280px; width: 256px; z-index: 900; transition: left 0.25s var(--ease); }
   .sidebar.open { left: 0; box-shadow: var(--shadow-lg); }
   .main { width: 100%; }
-  .menu-btn { display: inline-flex !important; }
+  .menu-fab { display: inline-flex !important; }
   .login-wrap { grid-template-columns: 1fr; }
   .login-hero { display: none; }
   .login-card-wrap { padding: 2rem 1.2rem; }
@@ -442,15 +431,11 @@
   .page-head .row { flex-wrap: wrap; }
   /* Make wide tables horizontally scroll instead of overflowing. */
   .data, table.data { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
-  .topbar { flex-wrap: wrap; gap: 0.4rem; }
-  .topbar .crumbs { font-size: 0.72rem; }
 }
 
 @media (max-width: 560px) {
   .grid, .kpi-grid { grid-template-columns: 1fr !important; }
   .content { padding: 0.8rem; }
-  .topbar { padding: 0.6rem 0.8rem; }
-  .topbar .crumbs { display: none; }
   .card { padding: 0.9rem; }
   .btn, button { min-height: 40px; }
   .modal { width: calc(100% - 1rem) !important; }
@@ -470,5 +455,5 @@
     transition-duration: 0.001ms !important;
   }
 }
-.menu-btn { display: none; align-items: center; gap: 0.4rem; border: 1px solid var(--ink-200); background: #fff; padding: 0.42rem 0.75rem; border-radius: 999px; transition: border-color 0.15s var(--ease); }
-.menu-btn:hover { border-color: var(--ink-300); }
+.menu-fab { display: none; align-items: center; justify-content: center; width: 40px; height: 40px; position: fixed; top: 0.7rem; left: 0.7rem; z-index: 950; border: 1px solid var(--ink-200); background: #fff; border-radius: 999px; box-shadow: var(--shadow-sm); transition: border-color 0.15s var(--ease); cursor: pointer; }
+.menu-fab:hover { border-color: var(--ink-300); }

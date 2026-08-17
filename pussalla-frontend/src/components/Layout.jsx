@@ -2,8 +2,7 @@ import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "./Loaders.jsx";
-import { Badge } from "./Card.jsx";
-import { roleLabel, initials } from "../utils/helpers";
+import { initials } from "../utils/helpers";
 
 // Nav item definitions gated by role. super_admin sees everything.
 const NAV = [
@@ -26,7 +25,7 @@ function navGroups(user) {
 }
 
 export default function Layout({ children }) {
-  const { user, logout, backendUp } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
@@ -72,20 +71,7 @@ export default function Layout({ children }) {
       </aside>
 
       <div className="main">
-        <header className="topbar">
-          <div className="row">
-            <button className="menu-btn" onClick={() => setOpen((o) => !o)} aria-label="Toggle menu">☰ Menu</button>
-            <div className="crumbs">
-              Incentivize <strong>/ {roleLabel(user.role)}</strong>
-            </div>
-          </div>
-          <div className="row">
-            <Badge tone={backendUp ? "green" : "red"}>
-              <span className={`live-dot ${backendUp ? "" : "off"}`} /> {backendUp ? "API Online" : "API Offline"}
-            </Badge>
-            <Badge tone="grey">{user.code}</Badge>
-          </div>
-        </header>
+        <button className="menu-fab" onClick={() => setOpen((o) => !o)} aria-label="Toggle menu">☰</button>
         <main className="content">{children}</main>
       </div>
     </div>
