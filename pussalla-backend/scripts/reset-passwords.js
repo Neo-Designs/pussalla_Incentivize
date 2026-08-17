@@ -6,8 +6,7 @@
 //
 require("dotenv").config();
 const bcrypt = require("bcryptjs");
-const { pool } = require("../db");
-
+const { pool } = require("../src/db");
 const PASSWORD = process.env.PASSWORD || process.env.SEED_DEFAULT_PASSWORD || "Incentivize@123";
 
 async function main() {
