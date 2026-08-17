@@ -20,6 +20,9 @@ export default function ReportsPage() {
   const [grid, setGrid] = useState(null);
   const [gridLoading, setGridLoading] = useState(false);
   const [employees, setEmployees] = useState([]);
+  const [allGrid, setAllGrid] = useState(null);
+  const [allGridLoading, setAllGridLoading] = useState(false);
+  const [compactGrid, setCompactGrid] = useState(false);
 
   const isSupervisor = user.role === "supervisor";
 
@@ -69,6 +72,24 @@ export default function ReportsPage() {
     })();
     return () => { active = false; };
   }, [divisionFilter]);
+
+  // All-employee work-breakdown grid (task x date for every employee).
+  useEffect(() => {
+    if (tab !== "monthly") return;
+    let active = true;
+    setAllGridLoading(true);
+    (async () => {
+      try {
+        const r = await reportsApi.allEmployeeGrid(month, divisionFilter || undefined);
+        if (active) setAllGrid(r);
+      } catch {
+        if (active) setAllGrid(null);
+      } finally {
+        if (active) setAllGridLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [tab, month, divisionFilter]);
 
   const exportDailyCsv = async () => {
     const blob = await reportsApi.exportDailyCsv(day);
@@ -274,6 +295,28 @@ export default function ReportsPage() {
               </Card>
             </Reveal>
           )}
+
+          <Reveal style={{ marginTop: "1rem" }}>
+            <Card>
+              <div className="spread" style={{ marginBottom: "0.8rem" }}>
+                <h3 className="section-title" style={{ margin: 0 }}>All-employee work breakdown — {month}</h3>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setCompactGrid((v) => !v)}
+                  title="Toggle between detailed cells (count + amount) and compact green checkmarks"
+                >
+                  {compactGrid ? "Show details" : "Compact (✓)"}
+                </button>
+              </div>
+              <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0, marginBottom: "0.6rem" }}>
+                Every employee is listed with their tasks as rows and dates as columns. The employee name
+                &amp; code cell is merged across their task rows. Each day cell shows how many times the
+                task was done and how much was earned that day — hover any cell for full detail. In compact
+                mode, a green ✓ marks a day with work; hover for the count and amount.
+              </p>
+              <AllEmployeeGrid grid={allGrid} loading={allGridLoading} compact={compactGrid} />
+            </Card>
+          </Reveal>
         </>
       ) : (
         // ---- Breakdown tab: pick an employee, see their full task x date grid ----
@@ -347,9 +390,17 @@ function EmployeeTaskGrid({ grid, loading, fullPage, onPayslip }) {
               </td>
               {dates.map((d) => {
                 const cell = t.days[d];
+                const title = cell
+                  ? `${Number(cell.count)} × done · ${Number(cell.output)} ${t.unit} · Rs. ${Number(cell.amount).toFixed(2)}`
+                  : "";
                 return (
-                  <td key={d} className={cell ? "cell-has" : ""} title={cell ? `Rs. ${Number(cell.amount).toFixed(2)} · ${Number(cell.output)} ${t.unit}` : ""}>
-                    {cell ? Number(cell.amount).toFixed(0) : ""}
+                  <td key={d} className={cell ? "cell-has" : ""} title={title}>
+                    {cell ? (
+                      <span className="cell-stack">
+                        <span className="cell-count">{Number(cell.count)}×</span>
+                        <span className="cell-amt">{Number(cell.amount).toFixed(0)}</span>
+                      </span>
+                    ) : ""}
                   </td>
                 );
               })}
@@ -361,6 +412,90 @@ function EmployeeTaskGrid({ grid, loading, fullPage, onPayslip }) {
           <tr>
             <td>Total incentive payout</td>
             {dates.map((d) => <td key={d} />)}
+            <td className="money">{formatMoney(grid.grandTotal)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+// All-employee work breakdown: one table where the employee name/code cell is
+// rowspan-merged across that employee's task rows. Each task row has a day
+// column per date in the month; cells show count + amount (or a green ✓ in
+// compact mode) with a hover tooltip carrying the full detail.
+function AllEmployeeGrid({ grid, loading, compact }) {
+  if (loading) return <table className="data"><tbody><SkeletonRows cols={6} rows={5} /></tbody></table>;
+  if (!grid || !grid.employees || grid.employees.length === 0) {
+    return <EmptyState title="No work logged this month" message="There is no task data to show for the selected period." />;
+  }
+  const dates = grid.dates || [];
+
+  const renderCell = (cell, unit) => {
+    if (!cell) return <td key="empty" className="cell-empty" />;
+    const title = `${Number(cell.count)} × done · ${Number(cell.output)} ${unit} · Rs. ${Number(cell.amount).toFixed(2)}`;
+    if (compact) {
+      return <td key="c" className="cell-tick" title={title}>✓</td>;
+    }
+    return (
+      <td key="c" className="cell-has" title={title}>
+        <span className="cell-stack">
+          <span className="cell-count">{Number(cell.count)}×</span>
+          <span className="cell-amt">{Number(cell.amount).toFixed(0)}</span>
+        </span>
+      </td>
+    );
+  };
+
+  return (
+    <div className="grid-breakdown all-employee-grid">
+      <table>
+        <thead>
+          <tr>
+            <th className="emp-col">Employee</th>
+            <th className="task-col">Task</th>
+            {dates.map((d) => <th key={d} title={d}>{d.slice(8)}</th>)}
+            <th className="row-total-col">Task total</th>
+            <th className="emp-total-col">Employee total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grid.employees.map((emp) => {
+            const rows = emp.tasks.length
+              ? emp.tasks
+              : [{ __empty: true, task: "—", taskId: `none-${emp.employeeId}`, days: {}, taskTotal: 0 }];
+            const rowSpan = rows.length;
+            return rows.map((t, i) => (
+              <tr key={`${emp.employeeId}-${t.taskId}`}>
+                {i === 0 && (
+                  <td rowSpan={rowSpan} className="emp-col">
+                    <strong>{emp.name}</strong>
+                    <div className="muted mono" style={{ fontSize: "0.74rem" }}>{emp.code}</div>
+                    {emp.divisionName && <div className="muted" style={{ fontSize: "0.68rem" }}>{emp.divisionName}</div>}
+                  </td>
+                )}
+                <td className="task-col">
+                  {t.__empty ? <span className="muted">No tasks</span> : (
+                    <>
+                      <strong style={{ fontSize: "0.8rem" }}>{t.task}</strong>
+                      <div className="muted" style={{ fontSize: "0.68rem" }}>{taskTypeLabel(t.taskType)}</div>
+                    </>
+                  )}
+                </td>
+                {dates.map((d) => renderCell(t.days?.[d], t.unit || ""))}
+                <td className="row-total">{t.__empty ? "—" : formatMoney(t.taskTotal)}</td>
+                {i === 0 && (
+                  <td rowSpan={rowSpan} className="emp-total money">
+                    <strong>{formatMoney(emp.total)}</strong>
+                  </td>
+                )}
+              </tr>
+            ));
+          })}
+        </tbody>
+        <tfoot>
+          <tr style={{ fontWeight: 800 }}>
+            <td colSpan={2 + dates.length + 1}>Grand total</td>
             <td className="money">{formatMoney(grid.grandTotal)}</td>
           </tr>
         </tfoot>

@@ -34,7 +34,7 @@ same API origin.
 
 ### Demo logins
 
-Every seeded account shares the password `Pussalla@123`:
+Every seeded account shares the password `Incentivize@123`:
 
 | Role | Code |
 |------|------|

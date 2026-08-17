@@ -79,6 +79,7 @@ export const api = {
   get: (p, opts) => request(p, { method: "GET", ...opts }),
   post: (p, body, opts) => request(p, { method: "POST", body, ...opts }),
   put: (p, body, opts) => request(p, { method: "PUT", body, ...opts }),
+  patch: (p, body, opts) => request(p, { method: "PATCH", body, ...opts }),
   del: (p, opts) => request(p, { method: "DELETE", ...opts }),
   postRaw: (p, text, contentType = "text/csv") =>
     fetch(p, {
@@ -117,6 +118,8 @@ export const employeesApi = {
   listPage: (params) => api.get("/api/employees" + qs(params)),
   create: (payload) => api.post("/api/employees", payload),
   update: (id, payload) => api.put(`/api/employees/${id}`, payload),
+  setPassword: (id, password) =>
+    api.patch(`/api/employees/${id}/password`, { password }),
   remove: (id) => api.del(`/api/employees/${id}`),
   bulkImport: (csvText) => api.postRaw("/api/employees/bulk", csvText, "text/csv"),
 };
@@ -153,6 +156,8 @@ export const reportsApi = {
     api.get(`/api/reports/monthly/${employeeId}?month=${encodeURIComponent(month)}`),
   employeeGrid: (employeeId, month) =>
     api.get(`/api/reports/employee-grid/${employeeId}?month=${encodeURIComponent(month)}`),
+  allEmployeeGrid: (month, divisionId) =>
+    api.get("/api/reports/all-employee-grid" + qs({ month, divisionId })),
   myEarnings: (from, to) => api.get("/api/reports/my-earnings" + qs({ from, to })),
   analytics: (from, to, divisionId) => api.get("/api/reports/analytics" + qs({ from, to, divisionId })),
   exportMonthlyCsv: (month) => api.get(`/api/reports/monthly.csv?month=${encodeURIComponent(month)}`),
