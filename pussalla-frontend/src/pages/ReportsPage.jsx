@@ -398,13 +398,14 @@ function EmployeeTaskGrid({ grid, loading, fullPage, onPayslip }) {
     return <EmptyState title="No task data for this employee this month" message="Pick another employee or month to see the breakdown." />;
   }
   const dates = grid.dates || [];
+  const monthLabel = grid.month || "";
   return (
     <div className="grid-breakdown">
       <table>
         <thead>
           <tr>
             <th>Task</th>
-            {dates.map((d) => <th key={d} title={d}>{d.slice(8)}</th>)}
+            {dates.map((d) => <th key={d} title={`${monthLabel}-${d}`}>{d}</th>)}
             <th>Task total</th>
           </tr>
         </thead>
@@ -452,6 +453,7 @@ function AllEmployeeGrid({ grid, loading }) {
     return <EmptyState title="No work logged this month" message="There is no task data to show for the selected period." />;
   }
   const dates = grid.dates || [];
+  const monthLabel = grid.month || "";
 
   const renderCell = (cell, t) => {
     if (!cell) return <td key="empty" className="cell-empty" />;
@@ -472,7 +474,7 @@ function AllEmployeeGrid({ grid, loading }) {
           <tr>
             <th className="emp-col">Employee</th>
             <th className="task-col">Task</th>
-            {dates.map((d) => <th key={d} title={d}>{d.slice(8)}</th>)}
+            {dates.map((d) => <th key={d} title={`${monthLabel}-${d}`}>{d}</th>)}
             <th className="row-total-col">Task total</th>
             <th className="emp-total-col">Employee total</th>
           </tr>

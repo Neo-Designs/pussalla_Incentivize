@@ -11,6 +11,30 @@ const router = express.Router();
 // rather than hard-scoping to the supervisor's home division server-side.
 const ALLOWED_ROLES = ["admin", "super_admin", "hr", "supervisor"];
 
+// `pg` parses DATE columns into JS Date objects (midnight UTC). Naive
+// `String(date).slice(0,10)` yields a locale string like "Thu Aug 13" which
+// does NOT match the ISO day keys the grid iterates, so every matrix cell
+// ended up blank. These helpers normalize a log_date (Date OR string) to a
+// stable 2-digit day-of-month key ("01".."31") and an ISO "YYYY-MM-DD" string
+// used for display, regardless of how the driver returned it.
+function dayKey(logDate) {
+  const d = logDate instanceof Date ? logDate : new Date(logDate);
+  return String(d.getUTCDate()).padStart(2, "0");
+}
+function isoDate(logDate) {
+  if (typeof logDate === "string" && /^\d{4}-\d{2}-\d{2}/.test(logDate)) return logDate.slice(0, 10);
+  const d = logDate instanceof Date ? logDate : new Date(logDate);
+  return d.toISOString().slice(0, 10);
+}
+// Day-number columns ("01".."31") for a given YYYY-MM month.
+function monthDayKeys(month) {
+  const [y, m] = month.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  const out = [];
+  for (let d = 1; d <= lastDay; d++) out.push(String(d).padStart(2, "0"));
+  return out;
+}
+
 // GET /api/reports/daily?date=2026-08-06&divisionId=2
 router.get("/daily", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
   const { date, divisionId } = req.query;
@@ -109,7 +133,7 @@ router.get("/monthly", requireAuth, requireRole(...ALLOWED_ROLES), async (req, r
   const byId = new Map(employees.map((e) => [e.employeeId, e]));
   for (const it of itemRows) {
     const emp = byId.get(it.employee_id);
-    if (emp) emp.items.push({ date: it.date, task: it.task, amount: Number(it.amount) });
+    if (emp) emp.items.push({ date: isoDate(it.date), task: it.task, amount: Number(it.amount) });
   }
 
   const grandTotal = employees.reduce((s, e) => s + e.total, 0);
@@ -138,7 +162,7 @@ router.get("/monthly/:employeeId", requireAuth, requireRole(...ALLOWED_ROLES), a
   if (!rows.length) return res.json({ employeeId: Number(employeeId), month, items: [], taskBreakdown: [], total: 0 });
 
   const items = rows.map((r) => ({
-    date: r.date, task: r.task, taskType: r.task_type,
+    date: isoDate(r.date), task: r.task, taskType: r.task_type,
     output: Number(r.total_output), unit: r.unit, amount: Number(r.amount),
   }));
   const taskMap = {};
@@ -162,10 +186,7 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
   const { month } = req.query;
   if (!month) return res.status(400).json({ error: "month query param is required (YYYY-MM)" });
 
-  const [y, m] = month.split("-").map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
-  const dates = [];
-  for (let d = 1; d <= lastDay; d++) dates.push(`${month}-${String(d).padStart(2, "0")}`);
+  const dates = monthDayKeys(month); // ["01" .. "<lastDay>"]
 
   const { rows } = await pool.query(
     `SELECT e.code, e.name, e.home_division_id, d.name AS division_name,
@@ -196,14 +217,14 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
       });
     }
     const t = taskIndex.get(key);
-    const dayKey = String(r.date).slice(0, 10);
-    if (!t.days[dayKey]) t.days[dayKey] = { count: 0, output: 0, amount: 0, rate: 0 };
-    t.days[dayKey].count += 1;
-    t.days[dayKey].output += Number(r.total_output);
+    const dk = dayKey(r.date);
+    if (!t.days[dk]) t.days[dk] = { count: 0, output: 0, amount: 0, rate: 0 };
+    t.days[dk].count += 1;
+    t.days[dk].output += Number(r.total_output);
     // Record the per-unit incentive rate snapshot for that day (last log wins
     // for a given day; for type-1 logs the rate equals the per-unit rate).
-    t.days[dayKey].rate = Number(r.rate);
-    t.days[dayKey].amount += Number(r.amount);
+    t.days[dk].rate = Number(r.rate);
+    t.days[dk].amount += Number(r.amount);
     t.taskTotal += Number(r.amount);
     t.logCount += 1;
   }
@@ -229,10 +250,7 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
   const { month, divisionId } = req.query;
   if (!month) return res.status(400).json({ error: "month query param is required (YYYY-MM)" });
 
-  const [y, m] = month.split("-").map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
-  const dates = [];
-  for (let d = 1; d <= lastDay; d++) dates.push(`${month}-${String(d).padStart(2, "0")}`);
+  const dates = monthDayKeys(month); // ["01" .. "<lastDay>"]
 
   const clauses = ["to_char(l.log_date, 'YYYY-MM') = $1"];
   const params = [month];
@@ -288,13 +306,13 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
       });
     }
     const t = ti.get(r.task_id);
-    const dayKey = String(r.date).slice(0, 10);
-    if (!t.days[dayKey]) t.days[dayKey] = { count: 0, output: 0, amount: 0, rate: 0 };
-    t.days[dayKey].count += 1;
-    t.days[dayKey].output += Number(r.total_output);
+    const dk = dayKey(r.date);
+    if (!t.days[dk]) t.days[dk] = { count: 0, output: 0, amount: 0, rate: 0 };
+    t.days[dk].count += 1;
+    t.days[dk].output += Number(r.total_output);
     // Per-unit incentive rate snapshot for that day (last log wins for the day).
-    t.days[dayKey].rate = Number(r.rate);
-    t.days[dayKey].amount += Number(r.amount);
+    t.days[dk].rate = Number(r.rate);
+    t.days[dk].amount += Number(r.amount);
     t.taskTotal += Number(r.amount);
     emp.total += Number(r.amount);
   }
@@ -328,7 +346,7 @@ router.get("/monthly.csv", requireAuth, requireRole(...ALLOWED_ROLES), async (re
     [month]
   );
   const out = [["Employee Code", "Name", "Division", "Date", "Task", "Amount"]];
-  rows.forEach((r) => out.push([r.code, r.name, r.division_name || "", String(r.date).slice(0, 10), r.task, Number(r.amount).toFixed(2)]));
+  rows.forEach((r) => out.push([r.code, r.name, r.division_name || "", isoDate(r.date), r.task, Number(r.amount).toFixed(2)]));
   sendCsv(res, `incentivize-monthly-${month}.csv`, out);
 });
 
@@ -358,9 +376,10 @@ router.get("/payslip.pdf", requireAuth, async (req, res) => {
     [employeeId, month]
   );
   // Itemized line items carry units, rate and earnings so the payslip can
-  // render a full Date | Task | Units | Rate | Earnings breakdown.
+  // render a full Date | Task | Units | Rate | Earnings breakdown. `date` is
+  // normalized to a clean ISO string (pg returns a Date object otherwise).
   const items = rows.map((r) => ({
-    date: r.date, task: r.task, unit: r.unit,
+    date: isoDate(r.date), task: r.task, unit: r.unit,
     output: Number(r.total_output), rate: Number(r.rate),
     amount: Number(r.amount),
   }));
@@ -368,17 +387,15 @@ router.get("/payslip.pdf", requireAuth, async (req, res) => {
   // Build the task x date grid: rows = tasks, columns = every day in the month.
   // Each cell stores the number of times the task was logged (count), the total
   // units, the per-unit rate snapshot and the payout amount, so the payslip can
-  // show "how many", "how much" and "at what rate".
-  const [y, m] = month.split("-").map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
-  const dates = [];
-  for (let d = 1; d <= lastDay; d++) dates.push(`${month}-${String(d).padStart(2, "0")}`);
+  // show "how many", "how much" and "at what rate". Days are keyed by 2-digit
+  // day-of-month ("01".."31") to match the column keys the renderer iterates.
+  const dates = monthDayKeys(month);
   const taskMap = {};
   const taskTotals = {};
   for (const r of rows) {
     const key = r.task;
     if (!taskMap[key]) { taskMap[key] = { task: r.task, unit: r.unit, days: {} }; taskTotals[key] = 0; }
-    const dk = String(r.date).slice(0, 10);
+    const dk = dayKey(r.date);
     if (!taskMap[key].days[dk]) taskMap[key].days[dk] = { count: 0, output: 0, rate: 0, amount: 0 };
     taskMap[key].days[dk].count += 1;
     taskMap[key].days[dk].output += Number(r.total_output);
@@ -425,7 +442,7 @@ router.get("/my-earnings", requireAuth, async (req, res) => {
   );
 
   const items = rows.map((r) => ({
-    date: r.date, task: r.task, taskType: r.task_type,
+    date: isoDate(r.date), task: r.task, taskType: r.task_type,
     output: Number(r.total_output), unit: r.unit, amount: Number(r.amount),
     divisionName: r.division_name,
   }));
