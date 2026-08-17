@@ -457,3 +457,106 @@
 }
 .menu-fab { display: none; align-items: center; justify-content: center; width: 40px; height: 40px; position: fixed; top: 0.7rem; left: 0.7rem; z-index: 950; border: 1px solid var(--ink-200); background: #fff; border-radius: 999px; box-shadow: var(--shadow-sm); transition: border-color 0.15s var(--ease); cursor: pointer; }
 .menu-fab:hover { border-color: var(--ink-300); }
+
+/* ============================================================
+   Payslip view — on-screen employee incentive payslip.
+   Strictly bounded (max-width + overflow-x-auto) so nothing
+   leaks past the right edge, even for 31-day months.
+   ============================================================ */
+.payslip-wrap { max-width: 48rem; margin: 0 auto; width: 100%; }
+.payslip-card {
+  width: 100%;
+  background: var(--surface, #fff);
+  padding: 2rem;
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-md, 0 4px 24px rgba(0,0,0,0.08));
+  border: 1px solid var(--ink-100, #e7e3da);
+}
+@media (max-width: 640px) { .payslip-card { padding: 1.1rem; } }
+
+.payslip-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+  padding-bottom: 1rem; border-bottom: 2px solid var(--pussalla-green-700, #590707);
+  margin-bottom: 1.25rem; flex-wrap: wrap;
+}
+.payslip-brand { font-size: 1.6rem; font-weight: 800; color: var(--pussalla-green-900, #3a0505); letter-spacing: -0.02em; }
+.payslip-doc-title { font-size: 0.95rem; color: var(--ink-500, #6b665f); margin-top: 0.1rem; }
+.payslip-head-right { display: flex; align-items: center; }
+.payslip-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* ---- Employee metadata: bordered two-column info card ---- */
+.payslip-meta {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  background: var(--ink-100, #e7e3da);
+  border: 1px solid var(--ink-100, #e7e3da);
+  border-radius: 0.6rem; overflow: hidden; margin-bottom: 1.25rem;
+}
+.meta-cell { background: var(--surface, #fff); padding: 0.7rem 0.9rem; }
+.meta-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-400, #948f86); font-weight: 600; }
+.meta-value { font-size: 1rem; color: var(--ink-900, #04090c); font-weight: 700; margin-top: 0.15rem; word-break: break-word; }
+@media (max-width: 560px) { .payslip-meta { grid-template-columns: 1fr; } }
+
+/* ---- Highlighted total payout summary ---- */
+.payslip-summary {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  background: linear-gradient(135deg, var(--pussalla-green-700, #590707), var(--pussalla-green-900, #3a0505));
+  color: #fff; border-radius: 0.6rem; padding: 1.1rem 1rem; margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0,0,0,0.08));
+}
+.summary-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.85; }
+.summary-amount { font-size: 1.9rem; font-weight: 800; line-height: 1.1; margin-top: 0.2rem; }
+.summary-sub { font-size: 0.74rem; opacity: 0.8; margin-top: 0.35rem; }
+
+/* ---- Sections ---- */
+.payslip-section { margin-bottom: 1.5rem; }
+.payslip-section-title { font-size: 1.05rem; font-weight: 700; color: var(--pussalla-green-900, #3a0505); margin: 0 0 0.2rem; }
+.payslip-section-sub { font-size: 0.8rem; color: var(--ink-500, #6b665f); margin: 0 0 0.7rem; }
+
+/* ---- Shared scroll wrapper: bounds overflow for wide grids/tables ---- */
+.payslip-grid-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.payslip-grid-scroll table { min-width: 100%; }
+
+/* ---- Monthly task activity calendar grid ---- */
+.payslip-calendar { border-collapse: collapse; font-size: 0.78rem; }
+.payslip-calendar th, .payslip-calendar td {
+  border: 1px solid var(--ink-100, #e7e3da); padding: 0.3rem 0.25rem; text-align: center; white-space: nowrap;
+}
+.payslip-calendar thead th { background: var(--pussalla-green-050, #f3f0e9); color: var(--pussalla-green-900, #3a0505); font-weight: 700; }
+.payslip-calendar .cal-task { text-align: left; min-width: 9rem; max-width: 13rem; background: var(--surface, #fff); position: sticky; left: 0; z-index: 2; }
+.payslip-calendar .cal-day { min-width: 1.6rem; }
+.payslip-calendar .cal-empty { background: var(--ink-050, #faf9f6); }
+.payslip-calendar .cal-has { background: rgba(46,125,50,0.10); }
+.payslip-calendar .cal-tick { color: var(--pussalla-green-600, #2E7D32); font-weight: 700; }
+.payslip-calendar .cal-total { font-weight: 700; color: var(--pussalla-green-900, #3a0505); min-width: 5rem; background: var(--surface, #fff); position: sticky; right: 0; z-index: 2; }
+.payslip-calendar .cal-task-type { font-size: 0.66rem; }
+.payslip-calendar tbody tr td.cal-task, .payslip-calendar tbody tr td.cal-total { background: var(--surface, #fff); }
+
+/* ---- Detailed daily breakdown table ---- */
+.payslip-table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+.payslip-table th, .payslip-table td {
+  border: 1px solid var(--ink-100, #e7e3da); padding: 0.55rem 0.7rem; vertical-align: top;
+}
+.payslip-table thead th {
+  background: var(--pussalla-green-050, #f3f0e9); color: var(--pussalla-green-900, #3a0505);
+  font-weight: 700; text-align: left; white-space: nowrap;
+}
+.payslip-table tbody tr.row-alt { background: var(--ink-050, #faf9f6); }
+.payslip-table .num { text-align: right; }
+.payslip-table .money { font-variant-numeric: tabular-nums; }
+.payslip-table .strong { font-weight: 700; }
+.payslip-table .col-date { white-space: nowrap; }
+.payslip-table .col-task { min-width: 9rem; }
+.payslip-table .col-task-type { font-size: 0.68rem; }
+.payslip-table .col-units { white-space: nowrap; }
+.payslip-table .unit-tag { color: var(--ink-400, #948f86); font-size: 0.74rem; margin-left: 0.15rem; }
+.payslip-table tfoot td { background: var(--pussalla-green-050, #f3f0e9); font-weight: 800; border-top: 2px solid var(--pussalla-green-700, #590707); }
+.payslip-table .tfoot-label { text-align: right; }
+
+/* ---- Footer ---- */
+.payslip-foot { font-size: 0.74rem; color: var(--ink-400, #948f86); text-align: center; margin-top: 1.25rem; padding-top: 0.9rem; border-top: 1px dashed var(--ink-100, #e7e3da); }
+
+/* ---- Skeleton / empty ---- */
+.payslip-skeleton .ps-shimmer { border-radius: 0.4rem; background: linear-gradient(90deg, var(--ink-050,#f3f0e9), var(--ink-100,#e7e3da), var(--ink-050,#f3f0e9)); background-size: 200% 100%; animation: ps-shimmer 1.3s infinite; }
+.payslip-empty { text-align: center; padding: 2.5rem 1rem; }
+.payslip-empty .payslip-brand { margin-bottom: 0.3rem; }
+@keyframes ps-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }

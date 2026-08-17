@@ -3,7 +3,8 @@ import { useAuth } from "../context/AuthContext";
 import Card, { PageHead, KPI, EmptyState, SkeletonRows } from "../components/Card.jsx";
 import Reveal from "../components/Reveal.jsx";
 import CellTooltip from "../components/CellTooltip.jsx";
-import { reportsApi, divisionsApi, employeesApi, downloadBlob } from "../api/client";
+import PayslipView from "../components/PayslipView.jsx";
+import { reportsApi, divisionsApi, downloadBlob } from "../api/client";
 import { formatMoney, formatNumber, formatDate, taskTypeLabel, todayISO, currentMonthISO } from "../utils/helpers";
 
 // Rich hover tooltip for a single task×date cell: units done, the incentive
@@ -54,7 +55,6 @@ export default function ReportsPage() {
   const [gridEmp, setGridEmp] = useState(null);
   const [grid, setGrid] = useState(null);
   const [gridLoading, setGridLoading] = useState(false);
-  const [employees, setEmployees] = useState([]);
   const [allGrid, setAllGrid] = useState(null);
   const [allGridLoading, setAllGridLoading] = useState(false);
   const [breakdownDivision, setBreakdownDivision] = useState("");
@@ -93,20 +93,6 @@ export default function ReportsPage() {
     })();
     return () => { active = false; };
   }, [tab, month, day, divisionFilter]);
-
-  // Load employees for the breakdown grid (scoped by division filter).
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const list = await employeesApi.list(divisionFilter ? { divisionId: divisionFilter, limit: 500 } : { limit: 500 });
-        if (active) setEmployees(list);
-      } catch {
-        if (active) setEmployees([]);
-      }
-    })();
-    return () => { active = false; };
-  }, [divisionFilter]);
 
   // All-employee work-breakdown grid (task x date for every employee).
   useEffect(() => {
@@ -175,25 +161,24 @@ export default function ReportsPage() {
             <div className="row" style={{ background: "var(--surface)", borderRadius: 999, padding: "0.25rem", border: "1px solid var(--ink-100)" }}>
               <button className={`btn btn-sm ${tab === "monthly" ? "" : "btn-ghost"}`} onClick={() => setTab("monthly")}>Monthly</button>
               <button className={`btn btn-sm ${tab === "daily" ? "" : "btn-ghost"}`} onClick={() => setTab("daily")}>Daily</button>
-              <button className={`btn btn-sm ${tab === "grid" ? "" : "btn-ghost"}`} onClick={() => setTab("grid")}>Breakdown</button>
             </div>
-            {tab !== "grid" && (tab === "daily" ? (
+            {tab === "daily" ? (
               <input type="date" value={day} onChange={(e) => setDay(e.target.value)} style={{ width: "auto" }} />
             ) : (
               <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: "auto" }} />
-            ))}
+            )}
             <select value={divisionFilter} onChange={(e) => setDivisionFilter(e.target.value)} style={{ width: "auto" }}>
               <option value="">{isSupervisor ? "My division" : "All divisions"}</option>
               {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
             {tab === "daily" ? (
               <button className="btn btn-gold btn-sm" onClick={exportDailyCsv} disabled={loading}>↓ Export CSV</button>
-            ) : tab === "monthly" ? (
+            ) : (
               <>
                 <button className="btn btn-gold btn-sm" onClick={exportMonthlyCsv} disabled={loading}>↓ Export CSV</button>
                 <button className="btn btn-sm" onClick={exportMonthlyExcel} disabled={loading}>↓ Excel</button>
               </>
-            ) : null}
+            )}
           </>
         }
       />
@@ -237,7 +222,7 @@ export default function ReportsPage() {
             </Card>
           </Reveal>
         </>
-      ) : tab === "monthly" ? (
+      ) : (
         <>
           <div className="kpi-grid stagger" style={{ marginBottom: "1rem" }}>
             <KPI tone="green" label={`Payout ${monthly?.month || month}`} value={monthly ? formatMoney(monthly.grandTotal) : "—"} />
@@ -319,15 +304,13 @@ export default function ReportsPage() {
 
           {gridEmp && (
             <Reveal style={{ marginTop: "1rem" }}>
-              <Card>
-                <div className="spread" style={{ marginBottom: "0.8rem" }}>
-                  <h3 className="section-title" style={{ margin: 0 }}>
-                    Task grid{grid ? ` — ${grid.name} (${grid.code})` : ""}
-                  </h3>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setGridEmp(null); setGrid(null); }}>✕ Close</button>
-                </div>
-                <EmployeeTaskGrid grid={grid} loading={gridLoading} onPayslip={() => grid && downloadPayslip(grid.employeeId, grid.code)} />
-              </Card>
+              <PayslipView
+                grid={grid}
+                loading={gridLoading}
+                onClose={() => { setGridEmp(null); setGrid(null); }}
+                onDownloadPdf={() => grid && downloadPayslip(grid.employeeId, grid.code)}
+                pdfLoading={payslipLoading === Number(gridEmp)}
+              />
             </Reveal>
           )}
 
@@ -350,101 +333,8 @@ export default function ReportsPage() {
             </Card>
           </Reveal>
         </>
-      ) : (
-        // ---- Breakdown tab: pick an employee, see their full task x date grid ----
-        <>
-          <Reveal>
-            <Card style={{ marginBottom: "1rem" }}>
-              <div className="spread" style={{ marginBottom: "0.8rem" }}>
-                <h3 className="section-title" style={{ margin: 0 }}>Employee task breakdown</h3>
-                <div className="row">
-                  <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: "auto" }} />
-                  <select value={gridEmp || ""} onChange={(e) => openGrid(e.target.value)} style={{ width: "auto" }}>
-                    <option value="">Select an employee…</option>
-                    {employees.map((e) => (
-                      <option key={e.id} value={e.id}>{e.name} — {e.code}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <p className="muted" style={{ fontSize: "0.84rem", marginTop: 0, marginBottom: 0 }}>
-                Rows are tasks, columns are dates in {month}. Each cell shows the payout for that
-                task on that day; row totals give the per-task payout and the grand total is the
-                person's incentive payout for the month.
-              </p>
-            </Card>
-          </Reveal>
-
-          <Reveal>
-            <Card>
-              <div className="spread" style={{ marginBottom: "0.8rem" }}>
-                <h3 className="section-title" style={{ margin: 0 }}>
-                  {grid ? `${grid.name} (${grid.code}) — ${grid.divisionName || ""}` : "No employee selected"}
-                </h3>
-                {grid && grid.tasks.length > 0 && (
-                  <button className="btn btn-gold btn-sm" onClick={() => downloadPayslip(grid.employeeId, grid.code)} disabled={payslipLoading !== null}>
-                    {payslipLoading === grid.employeeId ? "…" : "↓ Payslip PDF (with grid)"}
-                  </button>
-                )}
-              </div>
-              <EmployeeTaskGrid grid={grid} loading={gridLoading} fullPage />
-            </Card>
-          </Reveal>
-        </>
       )}
     </>
-  );
-}
-
-// The task x date grid shared between the inline view and the Breakdown tab.
-function EmployeeTaskGrid({ grid, loading, fullPage, onPayslip }) {
-  if (loading) return <table className="data"><tbody><SkeletonRows cols={6} rows={4} /></tbody></table>;
-  if (!grid || !grid.tasks || grid.tasks.length === 0) {
-    return <EmptyState title="No task data for this employee this month" message="Pick another employee or month to see the breakdown." />;
-  }
-  const dates = grid.dates || [];
-  const monthLabel = grid.month || "";
-  return (
-    <div className="grid-breakdown">
-      <table>
-        <thead>
-          <tr>
-            <th>Task</th>
-            {dates.map((d) => <th key={d} title={`${monthLabel}-${d}`}>{d}</th>)}
-            <th>Task total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {grid.tasks.map((t) => (
-            <tr key={t.taskId}>
-              <td>
-                <strong>{t.task}</strong>
-                <div className="muted" style={{ fontSize: "0.72rem" }}>{taskTypeLabel(t.taskType)}</div>
-              </td>
-              {dates.map((d) => {
-                const cell = t.days[d];
-                if (!cell) return <td key={d} className="cell-empty" />;
-                return (
-                  <td key={d} className="cell-has cell-tick-detail" title={`${formatNumber(cell.output)} ${t.unit} · Rs. ${Number(cell.amount).toFixed(2)}`}>
-                    <CellTooltip content={<CellDetail cell={cell} taskName={t.task} unit={t.unit} taskType={t.taskType} />}>
-                      <span className="cell-tick">✓</span>
-                    </CellTooltip>
-                  </td>
-                );
-              })}
-              <td className="row-total">{formatMoney(t.taskTotal)}</td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td>Total incentive payout</td>
-            {dates.map((d) => <td key={d} />)}
-            <td className="money">{formatMoney(grid.grandTotal)}</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
   );
 }
 
