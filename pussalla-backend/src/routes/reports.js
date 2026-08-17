@@ -170,7 +170,8 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
   const { rows } = await pool.query(
     `SELECT e.code, e.name, e.home_division_id, d.name AS division_name,
             t.id AS task_id, t.name AS task, t.task_type, t.unit,
-            l.log_date AS date, l.id AS log_id, l.total_output, p.share_amount AS amount
+            l.log_date AS date, l.id AS log_id, l.total_output, l.rate_snapshot AS rate,
+            p.share_amount AS amount
      FROM task_participants p
      JOIN daily_task_logs l ON l.id = p.daily_task_log_id
      JOIN tasks t ON t.id = l.task_id
@@ -196,9 +197,12 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
     }
     const t = taskIndex.get(key);
     const dayKey = String(r.date).slice(0, 10);
-    if (!t.days[dayKey]) t.days[dayKey] = { count: 0, output: 0, amount: 0 };
+    if (!t.days[dayKey]) t.days[dayKey] = { count: 0, output: 0, amount: 0, rate: 0 };
     t.days[dayKey].count += 1;
     t.days[dayKey].output += Number(r.total_output);
+    // Record the per-unit incentive rate snapshot for that day (last log wins
+    // for a given day; for type-1 logs the rate equals the per-unit rate).
+    t.days[dayKey].rate = Number(r.rate);
     t.days[dayKey].amount += Number(r.amount);
     t.taskTotal += Number(r.amount);
     t.logCount += 1;
@@ -238,7 +242,8 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
   const { rows } = await pool.query(
     `SELECT e.id AS employee_id, e.code, e.name, d.name AS division_name,
             t.id AS task_id, t.name AS task, t.task_type, t.unit,
-            l.log_date AS date, l.total_output, p.share_amount AS amount
+            l.log_date AS date, l.total_output, l.rate_snapshot AS rate,
+            p.share_amount AS amount
      FROM task_participants p
      JOIN daily_task_logs l ON l.id = p.daily_task_log_id
      JOIN tasks t ON t.id = l.task_id
@@ -284,9 +289,11 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
     }
     const t = ti.get(r.task_id);
     const dayKey = String(r.date).slice(0, 10);
-    if (!t.days[dayKey]) t.days[dayKey] = { count: 0, output: 0, amount: 0 };
+    if (!t.days[dayKey]) t.days[dayKey] = { count: 0, output: 0, amount: 0, rate: 0 };
     t.days[dayKey].count += 1;
     t.days[dayKey].output += Number(r.total_output);
+    // Per-unit incentive rate snapshot for that day (last log wins for the day).
+    t.days[dayKey].rate = Number(r.rate);
     t.days[dayKey].amount += Number(r.amount);
     t.taskTotal += Number(r.amount);
     emp.total += Number(r.amount);
@@ -339,7 +346,8 @@ router.get("/payslip.pdf", requireAuth, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT e.code, e.name, d.name AS division_name,
             t.id AS task_id, t.name AS task, t.task_type, t.unit,
-            l.log_date AS date, l.total_output, p.share_amount AS amount
+            l.log_date AS date, l.total_output, l.rate_snapshot AS rate,
+            p.share_amount AS amount
      FROM task_participants p
      JOIN daily_task_logs l ON l.id = p.daily_task_log_id
      JOIN tasks t ON t.id = l.task_id
@@ -349,11 +357,18 @@ router.get("/payslip.pdf", requireAuth, async (req, res) => {
      ORDER BY l.log_date, t.name`,
     [employeeId, month]
   );
-  const items = rows.map((r) => ({ date: r.date, task: r.task, amount: Number(r.amount) }));
+  // Itemized line items carry units, rate and earnings so the payslip can
+  // render a full Date | Task | Units | Rate | Earnings breakdown.
+  const items = rows.map((r) => ({
+    date: r.date, task: r.task, unit: r.unit,
+    output: Number(r.total_output), rate: Number(r.rate),
+    amount: Number(r.amount),
+  }));
 
   // Build the task x date grid: rows = tasks, columns = every day in the month.
-  // Each cell stores both the number of times the task was logged (count) and
-  // the payout amount, so the payslip can show "how many" and "how much".
+  // Each cell stores the number of times the task was logged (count), the total
+  // units, the per-unit rate snapshot and the payout amount, so the payslip can
+  // show "how many", "how much" and "at what rate".
   const [y, m] = month.split("-").map(Number);
   const lastDay = new Date(y, m, 0).getDate();
   const dates = [];
@@ -364,8 +379,10 @@ router.get("/payslip.pdf", requireAuth, async (req, res) => {
     const key = r.task;
     if (!taskMap[key]) { taskMap[key] = { task: r.task, unit: r.unit, days: {} }; taskTotals[key] = 0; }
     const dk = String(r.date).slice(0, 10);
-    if (!taskMap[key].days[dk]) taskMap[key].days[dk] = { count: 0, amount: 0 };
+    if (!taskMap[key].days[dk]) taskMap[key].days[dk] = { count: 0, output: 0, rate: 0, amount: 0 };
     taskMap[key].days[dk].count += 1;
+    taskMap[key].days[dk].output += Number(r.total_output);
+    taskMap[key].days[dk].rate = Number(r.rate);
     taskMap[key].days[dk].amount += Number(r.amount);
     taskTotals[key] += Number(r.amount);
   }

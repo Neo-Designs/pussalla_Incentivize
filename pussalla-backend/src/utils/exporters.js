@@ -109,20 +109,61 @@ function sendPayslipPdf(res, data) {
     doc.moveDown(0.6);
   }
 
-  // Daily line items (detailed ledger).
+  // Detailed itemized breakdown — a clean table (no checkmarks) listing every
+  // day's work: date, task, units completed, incentive rate, daily earnings.
+  // Sums into the grand total at the bottom.
   if (items.length) {
-    doc.fontSize(12).fillColor("#590707").text("Daily entries", { underline: true });
-    doc.moveDown(0.2);
+    const pageW = 545 - 50;
+    const colDate = 70;
+    const colTask = 165;
+    const colUnits = 80;
+    const colRate = 80;
+    const colEarn = pageW - colDate - colTask - colUnits - colRate;
+    const rowH = 15;
+    const headColor = "#590707";
+    const lineColor = "#E4DED4";
+
+    doc.fontSize(12).fillColor(headColor).text("Detailed daily breakdown", { underline: true });
+    doc.fontSize(7).fillColor("#736D66").text("Itemized per-day work: units completed, the incentive rate snapshot, and earnings for each task.", { width: pageW });
+    doc.moveDown(0.3);
+
+    let yy = doc.y;
+    // Header row
+    doc.fontSize(8).fillColor(headColor);
+    doc.text("Date", 50, yy, { width: colDate });
+    doc.text("Task", 50 + colDate, yy, { width: colTask });
+    doc.text("Units", 50 + colDate + colTask, yy, { width: colUnits, align: "right" });
+    doc.text("Rate", 50 + colDate + colTask + colUnits, yy, { width: colRate, align: "right" });
+    doc.text("Earnings", 50 + colDate + colTask + colUnits + colRate, yy, { width: colEarn, align: "right" });
+    yy += rowH;
+    doc.moveTo(50, yy).lineTo(545, yy).strokeColor(lineColor).lineWidth(0.5).stroke();
+
     items.forEach((it) => {
-      doc.fontSize(9).fillColor("#04090C");
-      const left = `${String(it.date).slice(0, 10)}  ${it.task}`;
-      doc.text(left, { continued: true, width: 400 });
-      doc.text(`Rs. ${Number(it.amount).toFixed(2)}`, { align: "right" });
+      if (yy > 760) { doc.addPage(); yy = doc.y; }
+      doc.fontSize(8).fillColor("#04090C");
+      doc.text(String(it.date).slice(0, 10), 50, yy, { width: colDate });
+      const tn = it.task.length > 30 ? it.task.slice(0, 29) + "…" : it.task;
+      doc.text(tn, 50 + colDate, yy, { width: colTask });
+      doc.text(`${Number(it.output).toFixed(2)} ${it.unit || ""}`, 50 + colDate + colTask, yy, { width: colUnits, align: "right" });
+      doc.text(`Rs. ${Number(it.rate).toFixed(2)}`, 50 + colDate + colTask + colUnits, yy, { width: colRate, align: "right" });
+      doc.fillColor(headColor).text(`Rs. ${Number(it.amount).toFixed(2)}`, 50 + colDate + colTask + colUnits + colRate, yy, { width: colEarn, align: "right" });
+      doc.fillColor("#04090C");
+      yy += rowH;
     });
-    doc.moveDown(0.8);
+
+    doc.moveTo(50, yy).lineTo(545, yy).strokeColor("#CDC7BD").lineWidth(1).stroke();
+    // Only print a total footer here when the grid table above did not already
+    // print one (avoids a duplicate "Total incentive payout" line).
+    if (!gridRows.length) {
+      yy += 4;
+      doc.fontSize(9).fillColor(headColor);
+      doc.text("Total incentive payout", 50, yy, { width: colDate + colTask + colUnits + colRate });
+      doc.text(`Rs. ${Number(grandTotal).toFixed(2)}`, 50 + colDate + colTask + colUnits + colRate, yy, { width: colEarn, align: "right" });
+    }
+    doc.moveDown(2.2);
   }
 
-  if (!gridRows.length) {
+  if (!gridRows.length && !items.length) {
     doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor("#CDC7BD").lineWidth(1).stroke();
     doc.moveDown(0.4);
     doc.fontSize(14).fillColor("#590707");

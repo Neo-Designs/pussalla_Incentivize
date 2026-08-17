@@ -2,8 +2,43 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import Card, { PageHead, KPI, EmptyState, SkeletonRows } from "../components/Card.jsx";
 import Reveal from "../components/Reveal.jsx";
+import CellTooltip from "../components/CellTooltip.jsx";
 import { reportsApi, divisionsApi, employeesApi, downloadBlob } from "../api/client";
-import { formatMoney, formatDate, taskTypeLabel, todayISO, currentMonthISO } from "../utils/helpers";
+import { formatMoney, formatNumber, formatDate, taskTypeLabel, todayISO, currentMonthISO } from "../utils/helpers";
+
+// Rich hover tooltip for a single task×date cell: units done, the incentive
+// rate snapshot for that day, and the total earned. rate may be 0 for group
+// tasks where the per-worker "rate" is derived from a pool/tier rule.
+function CellDetail({ cell, taskName, unit, taskType }) {
+  const units = Number(cell?.output || 0);
+  const rate = Number(cell?.rate || 0);
+  const amount = Number(cell?.amount || 0);
+  const count = Number(cell?.count || 0);
+  const isGroup = taskType === 2 || taskType === 3;
+  return (
+    <>
+      <div className="pop-head">{taskName}</div>
+      <div className="pop-row">
+        <span className="pop-label">Units done</span>
+        <span className="pop-value">{formatNumber(units)} {unit}</span>
+      </div>
+      <div className="pop-row">
+        <span className="pop-label">Incentive rate</span>
+        <span className="pop-value">Rs. {rate.toFixed(2)} / {unit}</span>
+      </div>
+      <div className="pop-row">
+        <span className="pop-label">Total earned</span>
+        <span className="pop-value money">{formatMoney(amount)}</span>
+      </div>
+      {count > 1 && (
+        <div className="pop-rate-note">{count} logs on this day; units &amp; earnings summed.</div>
+      )}
+      {isGroup && (
+        <div className="pop-rate-note">Group task: your share of the day's pool after the {taskType === 3 ? "tiered/base-limit" : "flat-rate pool"} split.</div>
+      )}
+    </>
+  );
+}
 
 export default function ReportsPage() {
   const { user } = useAuth();
@@ -22,7 +57,6 @@ export default function ReportsPage() {
   const [employees, setEmployees] = useState([]);
   const [allGrid, setAllGrid] = useState(null);
   const [allGridLoading, setAllGridLoading] = useState(false);
-  const [compactGrid, setCompactGrid] = useState(false);
 
   const isSupervisor = user.role === "supervisor";
 
@@ -300,21 +334,14 @@ export default function ReportsPage() {
             <Card>
               <div className="spread" style={{ marginBottom: "0.8rem" }}>
                 <h3 className="section-title" style={{ margin: 0 }}>All-employee work breakdown — {month}</h3>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setCompactGrid((v) => !v)}
-                  title="Toggle between detailed cells (count + amount) and compact green checkmarks"
-                >
-                  {compactGrid ? "Show details" : "Compact (✓)"}
-                </button>
               </div>
               <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0, marginBottom: "0.6rem" }}>
-                Every employee is listed with their tasks as rows and dates as columns. The employee name
-                &amp; code cell is merged across their task rows. Each day cell shows a green ✓ plus how
-                many times the task was done and how much was earned that day — hover any cell for full
-                detail. In compact mode, the cells collapse to a bare ✓ (hover for the count and amount).
+                Every employee is listed with their tasks as rows and dates (1–{(allGrid?.dates?.length) || 0}) as columns.
+                The employee name &amp; code cell is merged across their task rows. Each day cell shows a green ✓ when
+                that task was done on that day — <strong>hover any ✓</strong> for a detailed breakdown of units done,
+                the incentive rate, and the total earned that day.
               </p>
-              <AllEmployeeGrid grid={allGrid} loading={allGridLoading} compact={compactGrid} />
+              <AllEmployeeGrid grid={allGrid} loading={allGridLoading} />
             </Card>
           </Reveal>
         </>
@@ -390,18 +417,12 @@ function EmployeeTaskGrid({ grid, loading, fullPage, onPayslip }) {
               </td>
               {dates.map((d) => {
                 const cell = t.days[d];
-                const title = cell
-                  ? `${Number(cell.count)} × done · ${Number(cell.output)} ${t.unit} · Rs. ${Number(cell.amount).toFixed(2)}`
-                  : "";
+                if (!cell) return <td key={d} className="cell-empty" />;
                 return (
-                  <td key={d} className={cell ? "cell-has cell-tick-detail" : "cell-empty"} title={title}>
-                    {cell ? (
-                      <span className="cell-stack">
-                        <span className="cell-tick">✓</span>
-                        <span className="cell-count">{Number(cell.count)}×</span>
-                        <span className="cell-amt">Rs.{Number(cell.amount).toFixed(0)}</span>
-                      </span>
-                    ) : ""}
+                  <td key={d} className="cell-has cell-tick-detail" title={`${formatNumber(cell.output)} ${t.unit} · Rs. ${Number(cell.amount).toFixed(2)}`}>
+                    <CellTooltip content={<CellDetail cell={cell} taskName={t.task} unit={t.unit} taskType={t.taskType} />}>
+                      <span className="cell-tick">✓</span>
+                    </CellTooltip>
                   </td>
                 );
               })}
@@ -423,30 +444,23 @@ function EmployeeTaskGrid({ grid, loading, fullPage, onPayslip }) {
 
 // All-employee work breakdown: one table where the employee name/code cell is
 // rowspan-merged across that employee's task rows. Each task row has a day
-// column per date in the month; cells show count + amount (or a green ✓ in
-// compact mode) with a hover tooltip carrying the full detail.
-function AllEmployeeGrid({ grid, loading, compact }) {
+// column per date in the month; a cell shows a clean green ✓ when that task
+// was done on that day, and a rich hover tooltip (units / rate / earned).
+function AllEmployeeGrid({ grid, loading }) {
   if (loading) return <table className="data"><tbody><SkeletonRows cols={6} rows={5} /></tbody></table>;
   if (!grid || !grid.employees || grid.employees.length === 0) {
     return <EmptyState title="No work logged this month" message="There is no task data to show for the selected period." />;
   }
   const dates = grid.dates || [];
 
-  const renderCell = (cell, unit) => {
+  const renderCell = (cell, t) => {
     if (!cell) return <td key="empty" className="cell-empty" />;
-    const title = `${Number(cell.count)} × done · ${Number(cell.output)} ${unit} · Rs. ${Number(cell.amount).toFixed(2)}`;
-    if (compact) {
-      // "Not enough space" fallback: bare green checkmark; hover for full detail.
-      return <td key="c" className="cell-tick" title={title}>✓</td>;
-    }
-    // Default: green checkmark + the per-day-per-task details (count + earned).
+    const title = `${formatNumber(cell.output)} ${t.unit || ""} · Rs. ${Number(cell.amount).toFixed(2)}`;
     return (
       <td key="c" className="cell-has cell-tick-detail" title={title}>
-        <span className="cell-stack">
+        <CellTooltip content={<CellDetail cell={cell} taskName={t.task} unit={t.unit} taskType={t.taskType} />}>
           <span className="cell-tick">✓</span>
-          <span className="cell-count">{Number(cell.count)}×</span>
-          <span className="cell-amt">Rs.{Number(cell.amount).toFixed(0)}</span>
-        </span>
+        </CellTooltip>
       </td>
     );
   };
@@ -486,7 +500,7 @@ function AllEmployeeGrid({ grid, loading, compact }) {
                     </>
                   )}
                 </td>
-                {dates.map((d) => renderCell(t.days?.[d], t.unit || ""))}
+                {dates.map((d) => renderCell(t.days?.[d], t))}
                 <td className="row-total">{t.__empty ? "—" : formatMoney(t.taskTotal)}</td>
                 {i === 0 && (
                   <td rowSpan={rowSpan} className="emp-total money">

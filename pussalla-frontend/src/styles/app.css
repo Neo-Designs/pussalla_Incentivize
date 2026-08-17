@@ -334,6 +334,44 @@
 .cell-tick-detail { min-width: 3rem; }
 .cell-empty { background: transparent; }
 
+/* Hover tooltip host: wraps cell content so hovering anywhere shows the
+   body-level popover. Display:inline so it sits inside <td> without breaking
+   the table layout. */
+.cell-tip-host { display: inline; }
+.cell-tip-host:focus { outline: none; }
+
+/* Body-level popover (rendered via portal) so it never gets clipped by the
+   table's overflow-x container or sticky columns. */
+.cell-pop {
+  position: fixed;
+  z-index: 10000;
+  background: var(--surface, #fff);
+  color: var(--ink-900, #04090C);
+  border: 1px solid var(--ink-200, #e4ded4);
+  border-left: 4px solid var(--pussalla-green-600, #2f6b3a);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(4, 9, 12, 0.18), 0 2px 6px rgba(4, 9, 12, 0.08);
+  padding: 0.6rem 0.75rem;
+  min-width: 200px;
+  max-width: 320px;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  pointer-events: none;
+  animation: cell-pop-in 90ms ease-out;
+}
+.cell-pop.interactive { pointer-events: auto; }
+@keyframes cell-pop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.cell-pop .pop-head {
+  font-weight: 800; font-size: 0.78rem; color: var(--pussalla-green-700, #1f4a2a);
+  border-bottom: 1px solid var(--ink-100, #f0ece5);
+  padding-bottom: 0.3rem; margin-bottom: 0.4rem;
+}
+.cell-pop .pop-row { display: flex; justify-content: space-between; gap: 0.6rem; margin: 0.12rem 0; }
+.cell-pop .pop-label { color: var(--ink-600, #736D66); }
+.cell-pop .pop-value { font-weight: 700; }
+.cell-pop .pop-value.money { color: var(--pussalla-green-700, #1f4a2a); }
+.cell-pop .pop-rate-note { color: var(--ink-500, #8a857c); font-size: 0.68rem; margin-top: 0.4rem; padding-top: 0.35rem; border-top: 1px solid var(--ink-100, #f0ece5); }
+
 /* All-employee work breakdown grid: merged employee cell + sticky left cols */
 .all-employee-grid .emp-col { min-width: 150px; text-align: left; vertical-align: middle; background: var(--surface); }
 .all-employee-grid .task-col { min-width: 150px; text-align: left; }
