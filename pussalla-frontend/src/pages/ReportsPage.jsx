@@ -310,9 +310,9 @@ export default function ReportsPage() {
               </div>
               <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0, marginBottom: "0.6rem" }}>
                 Every employee is listed with their tasks as rows and dates as columns. The employee name
-                &amp; code cell is merged across their task rows. Each day cell shows how many times the
-                task was done and how much was earned that day — hover any cell for full detail. In compact
-                mode, a green ✓ marks a day with work; hover for the count and amount.
+                &amp; code cell is merged across their task rows. Each day cell shows a green ✓ plus how
+                many times the task was done and how much was earned that day — hover any cell for full
+                detail. In compact mode, the cells collapse to a bare ✓ (hover for the count and amount).
               </p>
               <AllEmployeeGrid grid={allGrid} loading={allGridLoading} compact={compactGrid} />
             </Card>
@@ -394,11 +394,12 @@ function EmployeeTaskGrid({ grid, loading, fullPage, onPayslip }) {
                   ? `${Number(cell.count)} × done · ${Number(cell.output)} ${t.unit} · Rs. ${Number(cell.amount).toFixed(2)}`
                   : "";
                 return (
-                  <td key={d} className={cell ? "cell-has" : ""} title={title}>
+                  <td key={d} className={cell ? "cell-has cell-tick-detail" : "cell-empty"} title={title}>
                     {cell ? (
                       <span className="cell-stack">
+                        <span className="cell-tick">✓</span>
                         <span className="cell-count">{Number(cell.count)}×</span>
-                        <span className="cell-amt">{Number(cell.amount).toFixed(0)}</span>
+                        <span className="cell-amt">Rs.{Number(cell.amount).toFixed(0)}</span>
                       </span>
                     ) : ""}
                   </td>
@@ -435,13 +436,16 @@ function AllEmployeeGrid({ grid, loading, compact }) {
     if (!cell) return <td key="empty" className="cell-empty" />;
     const title = `${Number(cell.count)} × done · ${Number(cell.output)} ${unit} · Rs. ${Number(cell.amount).toFixed(2)}`;
     if (compact) {
+      // "Not enough space" fallback: bare green checkmark; hover for full detail.
       return <td key="c" className="cell-tick" title={title}>✓</td>;
     }
+    // Default: green checkmark + the per-day-per-task details (count + earned).
     return (
-      <td key="c" className="cell-has" title={title}>
+      <td key="c" className="cell-has cell-tick-detail" title={title}>
         <span className="cell-stack">
+          <span className="cell-tick">✓</span>
           <span className="cell-count">{Number(cell.count)}×</span>
-          <span className="cell-amt">{Number(cell.amount).toFixed(0)}</span>
+          <span className="cell-amt">Rs.{Number(cell.amount).toFixed(0)}</span>
         </span>
       </td>
     );
