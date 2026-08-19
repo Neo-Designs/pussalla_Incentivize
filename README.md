@@ -82,6 +82,16 @@ pussalla_Incentivize/
 
 ---
 
+## 📚 Documentation
+
+- [`docs/PROJECT_PROPOSAL.md`](docs/PROJECT_PROPOSAL.md) — forward-looking proposal: vision, scope, stakeholders, full tech stack, architecture, phases, risks.
+- [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md) — as-built report: delivered modules, per-role function matrix, complete reports & analytics catalog, verification status.
+- [`docs/SUGGESTIONS_AND_ROADMAP.md`](docs/SUGGESTIONS_AND_ROADMAP.md) — improvement backlog by theme with priorities and a phased roadmap.
+- [`docs/CUSTOMER_DATABASE_SETUP.md`](docs/CUSTOMER_DATABASE_SETUP.md) — onboard a new customer (Neon/Supabase/self-hosted).
+- [`docs/RENDER_DEPLOY.md`](docs/RENDER_DEPLOY.md) — deploy to Render (Blueprint or manual).
+
+---
+
 ## 🚀 Quick Start (Run the Full Project)
 
 > **Prerequisites:** [Node.js 18+](https://nodejs.org/) and [PostgreSQL 14+](https://www.postgresql.org/) (or Docker to run Postgres).
