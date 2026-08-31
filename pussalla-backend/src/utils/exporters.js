@@ -129,19 +129,23 @@ function sendPayslipPdf(res, data) {
   // explicit width within [50, 545] so text/numbers never clip or leak past
   // the right edge, and rows paginate instead of running off the page.
   if (items.length) {
-    const colDate = 60;
-    const colTask = 135;
-    const colUnits = 65;
-    const colCount = 60;
-    const colRate = 65;
-    const colEarn = pageW - colDate - colTask - colUnits - colCount - colRate; // 110
+    const colDate = 50;
+    const colTask = 110;
+    const colUnits = 55;
+    const colCount = 45;
+    const colRate = 55;
+    const colSplit = 55;
+    const colLimit = 55;
+    const colEarn = pageW - colDate - colTask - colUnits - colCount - colRate - colSplit - colLimit; // 70
     const colX = {
       date: 50,
       task: 50 + colDate,
       units: 50 + colDate + colTask,
       count: 50 + colDate + colTask + colUnits,
       rate: 50 + colDate + colTask + colUnits + colCount,
-      earn: 50 + colDate + colTask + colUnits + colCount + colRate,
+      split: 50 + colDate + colTask + colUnits + colCount + colRate,
+      limit: 50 + colDate + colTask + colUnits + colCount + colRate + colSplit,
+      earn: 50 + colDate + colTask + colUnits + colCount + colRate + colSplit + colLimit,
     };
     const rowH = 15;
     const headColor = "#590707";
@@ -149,31 +153,36 @@ function sendPayslipPdf(res, data) {
 
     const headTop = doc.y;
     doc.fontSize(12).fillColor(headColor).text("Detailed daily breakdown", 50, headTop, { underline: true, width: pageW });
-    doc.fontSize(7).fillColor("#736D66").text("Itemized per-day work: dates, task code/name, units completed, number of tasks logged, rate snapshot, and daily earnings.", 50, doc.y, { width: pageW });
+    doc.fontSize(7).fillColor("#736D66").text("Itemized per-day work: dates, task code/name, units, task count, rate per unit, divided amongst, base limit, and daily earnings.", 50, doc.y, { width: pageW });
     doc.moveDown(0.3);
 
     let yy = doc.y;
     // Header row
-    doc.fontSize(8).fillColor(headColor);
+    doc.fontSize(7).fillColor(headColor);
     doc.text("Date", colX.date, yy, { width: colDate });
     doc.text("Task", colX.task, yy, { width: colTask });
     doc.text("Units", colX.units, yy, { width: colUnits, align: "right" });
-    doc.text("No. of Tasks", colX.count, yy, { width: colCount, align: "right" });
-    doc.text("Rate", colX.rate, yy, { width: colRate, align: "right" });
-    doc.text("Earnings", colX.earn, yy, { width: colEarn, align: "right" });
+    doc.text("Tasks Logged", colX.count, yy, { width: colCount, align: "right" });
+    doc.text("Rate / Unit", colX.rate, yy, { width: colRate, align: "right" });
+    doc.text("Divided", colX.split, yy, { width: colSplit, align: "center" });
+    doc.text("Base Limit", colX.limit, yy, { width: colLimit, align: "right" });
+    doc.text("Daily Earnings", colX.earn, yy, { width: colEarn, align: "right" });
     yy += rowH;
     doc.moveTo(50, yy).lineTo(545, yy).strokeColor(lineColor).lineWidth(0.5).stroke();
 
     items.forEach((it) => {
       if (yy > 760) { doc.addPage(); yy = doc.y; }
-      doc.fontSize(8).fillColor("#04090C");
+      doc.fontSize(7).fillColor("#04090C");
       doc.text(String(it.date).slice(0, 10), colX.date, yy, { width: colDate });
       const tLabel = `${it.taskCode ? "[" + it.taskCode + "] " : ""}${it.task}`;
-      const tn = tLabel.length > 25 ? tLabel.slice(0, 24) + "…" : tLabel;
+      const tn = tLabel.length > 20 ? tLabel.slice(0, 19) + "…" : tLabel;
       doc.text(tn, colX.task, yy, { width: colTask });
-      doc.text(`${Number(it.output).toFixed(2)} ${it.unit || ""}`, colX.units, yy, { width: colUnits, align: "right" });
+      doc.text(`${Number(it.output).toFixed(1)} ${it.unit || ""}`, colX.units, yy, { width: colUnits, align: "right" });
       doc.text(String(it.count || 1), colX.count, yy, { width: colCount, align: "right" });
       doc.text(`Rs. ${Number(it.rate).toFixed(2)}`, colX.rate, yy, { width: colRate, align: "right" });
+      const isGroup = it.taskType === 2 || it.taskType === 3;
+      doc.text(isGroup ? `${it.participantCount || 1} worker(s)` : "—", colX.split, yy, { width: colSplit, align: "center" });
+      doc.text(it.taskType === 3 && it.baseLimit != null ? `${it.baseLimit} ${it.unit || ""}` : "—", colX.limit, yy, { width: colLimit, align: "right" });
       doc.fillColor(headColor).text(`Rs. ${Number(it.amount).toFixed(2)}`, colX.earn, yy, { width: colEarn, align: "right" });
       doc.fillColor("#04090C");
       yy += rowH;
@@ -184,7 +193,7 @@ function sendPayslipPdf(res, data) {
     if (!gridRows.length) {
       yy += 4;
       doc.fontSize(9).fillColor(headColor);
-      doc.text("Total incentive payout", colX.date, yy, { width: colDate + colTask + colUnits + colCount + colRate });
+      doc.text("Monthly Total Earnings", colX.date, yy, { width: colDate + colTask + colUnits + colCount + colRate + colSplit + colLimit });
       doc.text(`Rs. ${Number(grandTotal).toFixed(2)}`, colX.earn, yy, { width: colEarn, align: "right" });
     }
     doc.moveDown(2.2);

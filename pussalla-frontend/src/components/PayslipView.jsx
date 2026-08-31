@@ -42,7 +42,7 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
   const monthLabel = prettyMonth(month);
 
   // Flatten the task x date grid into itemized rows (Date | Task Code & Name |
-  // Units | No. of Tasks | Rate | Daily Earnings), sorted by date then task name.
+  // Units | No. of Tasks | Rate per unit | Divided amongst | Daily base limit | Daily Earnings).
   const items = [];
   for (const t of grid.tasks) {
     for (const dk of Object.keys(t.days)) {
@@ -54,6 +54,8 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
         task: t.task,
         taskType: t.taskType,
         unit: t.unit,
+        baseLimit: t.baseLimit ?? c.baseLimit ?? null,
+        participantCount: c.participantCount || 1,
         count: Number(c.count) || 1,
         output: Number(c.output) || 0,
         rate: Number(c.rate) || 0,
@@ -166,7 +168,7 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
         {/* ---- Detailed daily breakdown (core financial record) ---- */}
         <section className="payslip-section">
           <h4 className="payslip-section-title">Detailed daily breakdown</h4>
-          <p className="payslip-section-sub">Itemized per-day work: dates, tasks completed, task count, units, rate snapshot, and daily earnings.</p>
+          <p className="payslip-section-sub">Itemized per-day work: dates, tasks completed, units, task count, rate per unit, divided amongst, base limit, and daily earnings.</p>
           <div className="payslip-grid-scroll">
             <table className="payslip-table">
               <thead>
@@ -175,28 +177,35 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
                   <th className="col-task">Task</th>
                   <th className="col-units">Units completed</th>
                   <th className="col-count num">No. of Tasks</th>
-                  <th className="col-rate num">Incentive rate</th>
+                  <th className="col-rate num">Rate per unit</th>
+                  <th className="col-split num">Divided amongst</th>
+                  <th className="col-limit num">Daily base limit</th>
                   <th className="col-earn num">Daily Earnings</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((it, i) => (
-                  <tr key={`${it.date}-${it.task}-${i}`} className={i % 2 ? "row-alt" : ""}>
-                    <td className="col-date">{formatDate(it.date)}</td>
-                    <td className="col-task">
-                      <strong>{it.taskCode ? `[${it.taskCode}] ` : ""}{it.task}</strong>
-                      <div className="muted col-task-type">{taskTypeLabel(it.taskType)}</div>
-                    </td>
-                    <td className="col-units mono">{formatNumber(it.output)} <span className="unit-tag">{it.unit || ""}</span></td>
-                    <td className="col-count num mono">{it.count}</td>
-                    <td className="col-rate num money">Rs. {it.rate.toFixed(2)}</td>
-                    <td className="col-earn num money strong">Rs. {it.amount.toFixed(2)}</td>
-                  </tr>
-                ))}
+                {items.map((it, i) => {
+                  const isGroup = it.taskType === 2 || it.taskType === 3;
+                  return (
+                    <tr key={`${it.date}-${it.task}-${i}`} className={i % 2 ? "row-alt" : ""}>
+                      <td className="col-date">{formatDate(it.date)}</td>
+                      <td className="col-task">
+                        <strong>{it.taskCode ? `[${it.taskCode}] ` : ""}{it.task}</strong>
+                        <div className="muted col-task-type">{taskTypeLabel(it.taskType)}</div>
+                      </td>
+                      <td className="col-units mono">{formatNumber(it.output)} <span className="unit-tag">{it.unit || ""}</span></td>
+                      <td className="col-count num mono">{it.count}</td>
+                      <td className="col-rate num money">Rs. {it.rate.toFixed(2)}</td>
+                      <td className="col-split num">{isGroup ? `${it.participantCount} worker${it.participantCount !== 1 ? "s" : ""}` : "—"}</td>
+                      <td className="col-limit num mono">{it.taskType === 3 && it.baseLimit != null ? `${formatNumber(it.baseLimit)} ${it.unit || ""}` : "—"}</td>
+                      <td className="col-earn num money strong">Rs. {it.amount.toFixed(2)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={5} className="tfoot-label">Monthly Total Earnings</td>
+                  <td colSpan={7} className="tfoot-label">Monthly Total Earnings</td>
                   <td className="col-earn num money strong" style={{ fontSize: "1.1rem" }}>Rs. {grandTotal.toFixed(2)}</td>
                 </tr>
               </tfoot>

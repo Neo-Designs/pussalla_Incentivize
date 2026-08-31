@@ -148,18 +148,24 @@ router.get("/monthly/:employeeId", requireAuth, requireRole(...ALLOWED_ROLES), a
 
   const { rows } = await pool.query(
     `SELECT e.id AS employee_id, e.code, e.name, d.name AS division_name,
-            l.log_date AS date, t.code AS task_code, t.name AS task, t.task_type, t.unit,
+            l.log_date AS date, t.code AS task_code, t.name AS task, t.task_type, t.unit, t.base_limit,
             COUNT(DISTINCT l.id) AS count,
             SUM(l.total_output) AS total_output,
             AVG(l.rate_snapshot) AS rate,
-            SUM(p.share_amount) AS amount
+            SUM(p.share_amount) AS amount,
+            (
+              SELECT COUNT(DISTINCT tp.employee_id)
+              FROM task_participants tp
+              JOIN daily_task_logs dl ON dl.id = tp.daily_task_log_id
+              WHERE dl.task_id = t.id AND dl.log_date = l.log_date
+            ) AS participant_count
      FROM task_participants p
      JOIN daily_task_logs l ON l.id = p.daily_task_log_id
      JOIN tasks t ON t.id = l.task_id
      JOIN employees e ON e.id = p.employee_id
      LEFT JOIN divisions d ON d.id = e.home_division_id
      WHERE p.employee_id = $1 AND to_char(l.log_date, 'YYYY-MM') = $2
-     GROUP BY e.id, e.code, e.name, d.name, l.log_date, t.code, t.name, t.task_type, t.unit
+     GROUP BY e.id, e.code, e.name, d.name, l.log_date, t.id, t.code, t.name, t.task_type, t.unit, t.base_limit
      ORDER BY l.log_date, t.name`,
     [employeeId, month]
   );
@@ -174,6 +180,8 @@ router.get("/monthly/:employeeId", requireAuth, requireRole(...ALLOWED_ROLES), a
     output: Number(r.total_output),
     unit: r.unit,
     rate: Number(r.rate),
+    baseLimit: r.base_limit != null ? Number(r.base_limit) : null,
+    participantCount: Number(r.participant_count || 1),
     amount: Number(r.amount),
   }));
   const taskMap = {};
@@ -196,7 +204,7 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
 
   const { rows } = await pool.query(
     `SELECT e.code, e.name, e.home_division_id, d.name AS division_name,
-            t.id AS task_id, t.code AS task_code, t.name AS task, t.task_type, t.unit,
+            t.id AS task_id, t.code AS task_code, t.name AS task, t.task_type, t.unit, t.base_limit,
             l.log_date AS date, l.id AS log_id, l.total_output, l.rate_snapshot AS rate,
             p.share_amount AS amount,
             (
@@ -225,17 +233,19 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
     if (!taskIndex.has(key)) {
       taskIndex.set(key, {
         taskId: r.task_id, taskCode: r.task_code, task: r.task, taskType: r.task_type, unit: r.unit,
+        baseLimit: r.base_limit != null ? Number(r.base_limit) : null,
         days: {}, taskTotal: 0, logCount: 0,
       });
     }
     const t = taskIndex.get(key);
     const dk = dayKey(r.date);
-    if (!t.days[dk]) t.days[dk] = { count: 0, output: 0, amount: 0, rate: 0, participantCount: 1 };
+    if (!t.days[dk]) t.days[dk] = { count: 0, output: 0, amount: 0, rate: 0, participantCount: 1, baseLimit: r.base_limit != null ? Number(r.base_limit) : null };
     t.days[dk].count += 1;
     t.days[dk].output += Number(r.total_output);
     t.days[dk].rate = Number(r.rate);
     t.days[dk].amount += Number(r.amount);
     t.days[dk].participantCount = Number(r.participant_count || 1);
+    t.days[dk].baseLimit = r.base_limit != null ? Number(r.base_limit) : null;
     t.taskTotal += Number(r.amount);
     t.logCount += 1;
   }
@@ -265,7 +275,7 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
 
   const { rows } = await pool.query(
     `SELECT e.id AS employee_id, e.code, e.name, d.name AS division_name,
-            t.id AS task_id, t.code AS task_code, t.name AS task, t.task_type, t.unit,
+            t.id AS task_id, t.code AS task_code, t.name AS task, t.task_type, t.unit, t.base_limit,
             l.log_date AS date, l.total_output, l.rate_snapshot AS rate,
             p.share_amount AS amount,
             (
@@ -312,17 +322,19 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
     if (!ti.has(r.task_id)) {
       ti.set(r.task_id, {
         taskId: r.task_id, taskCode: r.task_code, task: r.task, taskType: r.task_type, unit: r.unit,
+        baseLimit: r.base_limit != null ? Number(r.base_limit) : null,
         days: {}, taskTotal: 0,
       });
     }
     const t = ti.get(r.task_id);
     const dk = dayKey(r.date);
-    if (!t.days[dk]) t.days[dk] = { count: 0, output: 0, amount: 0, rate: 0, participantCount: 1 };
+    if (!t.days[dk]) t.days[dk] = { count: 0, output: 0, amount: 0, rate: 0, participantCount: 1, baseLimit: r.base_limit != null ? Number(r.base_limit) : null };
     t.days[dk].count += 1;
     t.days[dk].output += Number(r.total_output);
     t.days[dk].rate = Number(r.rate);
     t.days[dk].amount += Number(r.amount);
     t.days[dk].participantCount = Number(r.participant_count || 1);
+    t.days[dk].baseLimit = r.base_limit != null ? Number(r.base_limit) : null;
     t.taskTotal += Number(r.amount);
     emp.total += Number(r.amount);
   }
@@ -422,16 +434,25 @@ router.get("/payslip.pdf", requireAuth, async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `SELECT e.code, e.name, d.name AS division_name,
-            t.id AS task_id, t.name AS task, t.task_type, t.unit,
-            l.log_date AS date, l.total_output, l.rate_snapshot AS rate,
-            p.share_amount AS amount
+    `SELECT e.code AS emp_code, e.name AS emp_name, d.name AS division_name,
+            l.log_date AS date, t.id AS task_id, t.code AS task_code, t.name AS task, t.task_type, t.unit, t.base_limit,
+            COUNT(DISTINCT l.id) AS count,
+            SUM(l.total_output) AS output,
+            AVG(l.rate_snapshot) AS rate,
+            SUM(p.share_amount) AS amount,
+            (
+              SELECT COUNT(DISTINCT tp.employee_id)
+              FROM task_participants tp
+              JOIN daily_task_logs dl ON dl.id = tp.daily_task_log_id
+              WHERE dl.task_id = t.id AND dl.log_date = l.log_date
+            ) AS participant_count
      FROM task_participants p
      JOIN daily_task_logs l ON l.id = p.daily_task_log_id
      JOIN tasks t ON t.id = l.task_id
      JOIN employees e ON e.id = p.employee_id
      LEFT JOIN divisions d ON d.id = e.home_division_id
      WHERE p.employee_id = $1 AND to_char(l.log_date, 'YYYY-MM') = $2
+     GROUP BY e.code, e.name, d.name, l.log_date, t.id, t.code, t.name, t.task_type, t.unit, t.base_limit
      ORDER BY l.log_date, t.name`,
     [employeeId, month]
   );

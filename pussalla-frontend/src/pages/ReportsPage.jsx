@@ -16,6 +16,7 @@ function CellDetail({ cell, taskName, unit, taskType }) {
   const amount = Number(cell?.amount || 0);
   const count = Number(cell?.count || 0);
   const participantCount = Number(cell?.participantCount || 1);
+  const baseLimit = cell?.baseLimit;
   const isGroup = taskType === 2 || taskType === 3;
   return (
     <>
@@ -25,7 +26,7 @@ function CellDetail({ cell, taskName, unit, taskType }) {
         <span className="pop-value">{formatNumber(units)} {unit}</span>
       </div>
       <div className="pop-row">
-        <span className="pop-label">Incentive rate</span>
+        <span className="pop-label">Rate per unit</span>
         <span className="pop-value">Rs. {rate.toFixed(2)} / {unit}</span>
       </div>
       <div className="pop-row">
@@ -35,7 +36,13 @@ function CellDetail({ cell, taskName, unit, taskType }) {
       {isGroup && (
         <div className="pop-row" style={{ marginTop: "0.2rem", paddingTop: "0.2rem", borderTop: "1px dashed rgba(255,255,255,0.15)" }}>
           <span className="pop-label">Divided amongst</span>
-          <span className="pop-value strong">{participantCount} employee{participantCount !== 1 ? "s" : ""}</span>
+          <span className="pop-value strong">{participantCount} worker{participantCount !== 1 ? "s" : ""}</span>
+        </div>
+      )}
+      {taskType === 3 && baseLimit != null && (
+        <div className="pop-row">
+          <span className="pop-label">Daily base limit</span>
+          <span className="pop-value">{formatNumber(baseLimit)} {unit}</span>
         </div>
       )}
       {count > 1 && (
@@ -43,7 +50,7 @@ function CellDetail({ cell, taskName, unit, taskType }) {
       )}
       {isGroup && (
         <div className="pop-rate-note">
-          Group task: divided amongst {participantCount} employee{participantCount !== 1 ? "s" : ""} ({taskType === 3 ? "tiered/base-limit" : "flat-rate pool"} split).
+          Group task: divided amongst {participantCount} worker{participantCount !== 1 ? "s" : ""} ({taskType === 3 ? `tiered bonus over ${formatNumber(baseLimit || 0)} ${unit} base limit` : "flat-rate pool split"}).
         </div>
       )}
     </>
