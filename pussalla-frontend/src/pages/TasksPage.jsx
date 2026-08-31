@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import Card, { PageHead, KPI, EmptyState, Badge, SkeletonRows } from "../components/Card.jsx";
 import Modal, { ConfirmDialog } from "../components/Modal.jsx";
@@ -8,6 +9,7 @@ import { formatMoney, formatNumber, taskTypeLabel, TASK_TYPES } from "../utils/h
 
 export default function TasksPage() {
   const toast = useToast();
+  const { user } = useAuth();
   const [divisions, setDivisions] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,17 +72,18 @@ export default function TasksPage() {
 
       <Card>
         {loading ? (
-          <table className="data"><tbody><SkeletonRows cols={6} /></tbody></table>
+          <table className="data"><tbody><SkeletonRows cols={7} /></tbody></table>
         ) : filtered.length === 0 ? (
           <EmptyState title="No tasks yet" message="Create a task to start capturing daily output." />
         ) : (
           <table className="data">
             <thead>
-              <tr><th>Task</th><th>Division</th><th>Type</th><th>Rate</th><th>Base Limit</th><th>Unit</th><th>Actions</th></tr>
+              <tr><th>Code</th><th>Task</th><th>Division</th><th>Type</th><th>Rate</th><th>Base Limit</th><th>Unit</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {filtered.map((t) => (
                 <tr key={t.id}>
+                  <td><code className="mono">{t.code || `TSK-${String(t.id).padStart(3, "0")}`}</code></td>
                   <td><strong>{t.name}</strong></td>
                   <td>{divName(t.division_id)}</td>
                   <td>
@@ -105,7 +108,7 @@ export default function TasksPage() {
       </Card>
 
       {modalOpen && (
-        <TaskModal divisions={divisions} editTarget={editTarget} onSaved={handleSaved} onClose={() => { setModalOpen(false); setEditTarget(null); }} />
+        <TaskModal divisions={divisions} editTarget={editTarget} user={user} onSaved={handleSaved} onClose={() => { setModalOpen(false); setEditTarget(null); }} />
       )}
 
       {confirmDel && (
@@ -125,11 +128,15 @@ export default function TasksPage() {
   );
 }
 
-function TaskModal({ divisions, editTarget, onSaved, onClose }) {
+function TaskModal({ divisions, editTarget, user, onSaved, onClose }) {
   const toast = useToast();
   const isEdit = !!editTarget;
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const [code, setCode] = useState(editTarget?.code || "");
   const [name, setName] = useState(editTarget?.name || "");
   const [divisionId, setDivisionId] = useState(editTarget?.division_id || "");
+  const [newDivCode, setNewDivCode] = useState("");
+  const [newDivName, setNewDivName] = useState("");
   const [taskType, setTaskType] = useState(editTarget?.task_type || 1);
   const [rate, setRate] = useState(editTarget?.rate ?? "");
   const [baseLimit, setBaseLimit] = useState(editTarget?.base_limit ?? "");
@@ -138,13 +145,28 @@ function TaskModal({ divisions, editTarget, onSaved, onClose }) {
 
   const submit = async () => {
     if (!name || !divisionId || !taskType || rate === "" || !unit) { toast.error("All fields except base limit are required"); return; }
+    if (divisionId === "NEW" && !newDivName) { toast.error("New division name is required"); return; }
     if (Number(taskType) === 3 && (baseLimit === "" || baseLimit == null)) { toast.error("Base limit is required for Type 3 tasks"); return; }
+    
     setSaving(true);
     try {
+      let finalDivId = divisionId;
+      if (divisionId === "NEW") {
+        const createdDiv = await divisionsApi.create({ code: newDivCode, name: newDivName });
+        finalDivId = createdDiv.id;
+        toast.success(`Division "${createdDiv.name}" created`);
+      }
+
       const payload = {
-        divisionId: Number(divisionId), name, taskType: Number(taskType),
-        rate: Number(rate), baseLimit: Number(taskType) === 3 ? Number(baseLimit) : null, unit,
+        code: code.trim() || undefined,
+        divisionId: Number(finalDivId),
+        name,
+        taskType: Number(taskType),
+        rate: Number(rate),
+        baseLimit: Number(taskType) === 3 ? Number(baseLimit) : null,
+        unit,
       };
+
       if (isEdit) {
         await tasksApi.update(editTarget.id, payload);
         toast.success("Task updated");
@@ -168,21 +190,43 @@ function TaskModal({ divisions, editTarget, onSaved, onClose }) {
       }
     >
       <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-        <div style={{ gridColumn: "1 / -1" }}>
-          <label>Task name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Chicken Deboning (Individual)" />
-        </div>
         <div>
-          <label>Division</label>
-          <select value={divisionId} onChange={(e) => setDivisionId(e.target.value)}>
-            <option value="">Select…</option>
-            {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          <label>Task code (auto-generated if empty)</label>
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. TSK-001" />
         </div>
         <div>
           <label>Unit</label>
           <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="kg, tray, trip, sqm…" />
         </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label>Task name</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Chicken Deboning (Individual)" />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label>Division</label>
+          <select value={divisionId} onChange={(e) => setDivisionId(e.target.value)}>
+            <option value="">Select division…</option>
+            {divisions.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.code})</option>)}
+            {isAdmin && <option value="NEW">+ Add New Division…</option>}
+          </select>
+        </div>
+
+        {divisionId === "NEW" && (
+          <div style={{ gridColumn: "1 / -1", padding: "0.75rem", background: "var(--surface-2)", borderRadius: "var(--radius-sm)", border: "1px dashed var(--brand-400)" }}>
+            <strong style={{ fontSize: "0.85rem", color: "var(--brand-700)" }}>Create &amp; Assign New Division</strong>
+            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginTop: "0.4rem" }}>
+              <div>
+                <label>Division Code</label>
+                <input value={newDivCode} onChange={(e) => setNewDivCode(e.target.value)} placeholder="e.g. PKG" />
+              </div>
+              <div>
+                <label>Division Name *</label>
+                <input value={newDivName} onChange={(e) => setNewDivName(e.target.value)} placeholder="e.g. Packaging Unit" />
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={{ gridColumn: "1 / -1" }}>
           <label>Calculation engine</label>
           <div className="grid" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem" }}>

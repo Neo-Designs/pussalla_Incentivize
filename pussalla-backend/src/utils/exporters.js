@@ -129,17 +129,19 @@ function sendPayslipPdf(res, data) {
   // explicit width within [50, 545] so text/numbers never clip or leak past
   // the right edge, and rows paginate instead of running off the page.
   if (items.length) {
-    const colDate = 70;
-    const colTask = 165;
-    const colUnits = 80;
-    const colRate = 80;
-    const colEarn = pageW - colDate - colTask - colUnits - colRate; // 100
+    const colDate = 60;
+    const colTask = 135;
+    const colUnits = 65;
+    const colCount = 60;
+    const colRate = 65;
+    const colEarn = pageW - colDate - colTask - colUnits - colCount - colRate; // 110
     const colX = {
       date: 50,
       task: 50 + colDate,
       units: 50 + colDate + colTask,
-      rate: 50 + colDate + colTask + colUnits,
-      earn: 50 + colDate + colTask + colUnits + colRate,
+      count: 50 + colDate + colTask + colUnits,
+      rate: 50 + colDate + colTask + colUnits + colCount,
+      earn: 50 + colDate + colTask + colUnits + colCount + colRate,
     };
     const rowH = 15;
     const headColor = "#590707";
@@ -147,7 +149,7 @@ function sendPayslipPdf(res, data) {
 
     const headTop = doc.y;
     doc.fontSize(12).fillColor(headColor).text("Detailed daily breakdown", 50, headTop, { underline: true, width: pageW });
-    doc.fontSize(7).fillColor("#736D66").text("Itemized per-day work: units completed, the incentive rate snapshot, and earnings for each task.", 50, doc.y, { width: pageW });
+    doc.fontSize(7).fillColor("#736D66").text("Itemized per-day work: dates, task code/name, units completed, number of tasks logged, rate snapshot, and daily earnings.", 50, doc.y, { width: pageW });
     doc.moveDown(0.3);
 
     let yy = doc.y;
@@ -156,6 +158,7 @@ function sendPayslipPdf(res, data) {
     doc.text("Date", colX.date, yy, { width: colDate });
     doc.text("Task", colX.task, yy, { width: colTask });
     doc.text("Units", colX.units, yy, { width: colUnits, align: "right" });
+    doc.text("No. of Tasks", colX.count, yy, { width: colCount, align: "right" });
     doc.text("Rate", colX.rate, yy, { width: colRate, align: "right" });
     doc.text("Earnings", colX.earn, yy, { width: colEarn, align: "right" });
     yy += rowH;
@@ -165,9 +168,11 @@ function sendPayslipPdf(res, data) {
       if (yy > 760) { doc.addPage(); yy = doc.y; }
       doc.fontSize(8).fillColor("#04090C");
       doc.text(String(it.date).slice(0, 10), colX.date, yy, { width: colDate });
-      const tn = it.task.length > 30 ? it.task.slice(0, 29) + "…" : it.task;
+      const tLabel = `${it.taskCode ? "[" + it.taskCode + "] " : ""}${it.task}`;
+      const tn = tLabel.length > 25 ? tLabel.slice(0, 24) + "…" : tLabel;
       doc.text(tn, colX.task, yy, { width: colTask });
       doc.text(`${Number(it.output).toFixed(2)} ${it.unit || ""}`, colX.units, yy, { width: colUnits, align: "right" });
+      doc.text(String(it.count || 1), colX.count, yy, { width: colCount, align: "right" });
       doc.text(`Rs. ${Number(it.rate).toFixed(2)}`, colX.rate, yy, { width: colRate, align: "right" });
       doc.fillColor(headColor).text(`Rs. ${Number(it.amount).toFixed(2)}`, colX.earn, yy, { width: colEarn, align: "right" });
       doc.fillColor("#04090C");
@@ -175,12 +180,11 @@ function sendPayslipPdf(res, data) {
     });
 
     doc.moveTo(50, yy).lineTo(545, yy).strokeColor("#CDC7BD").lineWidth(1).stroke();
-    // Only print a total footer here when the grid table above did not already
-    // print one (avoids a duplicate "Total incentive payout" line).
+    // Print total footer
     if (!gridRows.length) {
       yy += 4;
       doc.fontSize(9).fillColor(headColor);
-      doc.text("Total incentive payout", colX.date, yy, { width: colDate + colTask + colUnits + colRate });
+      doc.text("Total incentive payout", colX.date, yy, { width: colDate + colTask + colUnits + colCount + colRate });
       doc.text(`Rs. ${Number(grandTotal).toFixed(2)}`, colX.earn, yy, { width: colEarn, align: "right" });
     }
     doc.moveDown(2.2);

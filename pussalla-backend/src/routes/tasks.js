@@ -27,21 +27,37 @@ router.get("/", requireAuth, async (req, res) => {
   res.json({ rows, page, limit, total: countRows[0].total });
 });
 
-router.post("/", requireAuth, requireRole("admin"), async (req, res) => {
-  const { divisionId, name, taskType, rate, baseLimit, unit } = req.body;
+router.post("/", requireAuth, requireRole("admin", "super_admin"), async (req, res) => {
+  let { code, divisionId, name, taskType, rate, baseLimit, unit } = req.body;
   if (!divisionId || !name || !taskType || rate == null || !unit) {
     return res.status(400).json({ error: "divisionId, name, taskType, rate and unit are required" });
   }
   if (Number(taskType) === 3 && baseLimit == null) {
     return res.status(400).json({ error: "baseLimit is required for Type 3 tasks" });
   }
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    if (!code) {
+      const { rows: maxRows } = await client.query("SELECT MAX(id) AS max_id FROM tasks");
+      const nextId = (maxRows[0]?.max_id || 0) + 1;
+      code = `TSK-${String(nextId).padStart(3, "0")}`;
+    }
+
+    let finalCode = code;
+    let counter = 1;
+    while (true) {
+      const { rows: existing } = await client.query("SELECT id FROM tasks WHERE code = $1", [finalCode]);
+      if (!existing.length) break;
+      finalCode = `${code}-${counter}`;
+      counter++;
+    }
+
     const { rows } = await client.query(
-      `INSERT INTO tasks (division_id, name, task_type, rate, base_limit, unit)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [divisionId, name, taskType, rate, taskType == 3 ? baseLimit : null, unit]
+      `INSERT INTO tasks (code, division_id, name, task_type, rate, base_limit, unit)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [finalCode, divisionId, name, taskType, rate, taskType == 3 ? baseLimit : null, unit]
     );
     const task = rows[0];
     await writeAudit(client, {
@@ -59,9 +75,9 @@ router.post("/", requireAuth, requireRole("admin"), async (req, res) => {
   }
 });
 
-router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
+router.put("/:id", requireAuth, requireRole("admin", "super_admin"), async (req, res) => {
   const { id } = req.params;
-  const { name, taskType, rate, baseLimit, unit } = req.body;
+  const { code, name, taskType, rate, baseLimit, unit } = req.body;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -70,14 +86,15 @@ router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
 
     const { rows } = await client.query(
       `UPDATE tasks SET
-         name = COALESCE($1, name),
-         task_type = COALESCE($2, task_type),
-         rate = COALESCE($3, rate),
-         base_limit = $4,
-         unit = COALESCE($5, unit),
+         code = COALESCE($1, code),
+         name = COALESCE($2, name),
+         task_type = COALESCE($3, task_type),
+         rate = COALESCE($4, rate),
+         base_limit = $5,
+         unit = COALESCE($6, unit),
          updated_at = now()
-       WHERE id = $6 RETURNING *`,
-      [name, taskType, rate, baseLimit ?? before[0].base_limit, unit, id]
+       WHERE id = $7 RETURNING *`,
+      [code || null, name, taskType, rate, baseLimit ?? before[0].base_limit, unit, id]
     );
     const after = rows[0];
     await writeAudit(client, {

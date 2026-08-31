@@ -15,6 +15,7 @@ function CellDetail({ cell, taskName, unit, taskType }) {
   const rate = Number(cell?.rate || 0);
   const amount = Number(cell?.amount || 0);
   const count = Number(cell?.count || 0);
+  const participantCount = Number(cell?.participantCount || 1);
   const isGroup = taskType === 2 || taskType === 3;
   return (
     <>
@@ -31,11 +32,19 @@ function CellDetail({ cell, taskName, unit, taskType }) {
         <span className="pop-label">Total earned</span>
         <span className="pop-value money">{formatMoney(amount)}</span>
       </div>
+      {isGroup && (
+        <div className="pop-row" style={{ marginTop: "0.2rem", paddingTop: "0.2rem", borderTop: "1px dashed rgba(255,255,255,0.15)" }}>
+          <span className="pop-label">Divided amongst</span>
+          <span className="pop-value strong">{participantCount} employee{participantCount !== 1 ? "s" : ""}</span>
+        </div>
+      )}
       {count > 1 && (
         <div className="pop-rate-note">{count} logs on this day; units &amp; earnings summed.</div>
       )}
       {isGroup && (
-        <div className="pop-rate-note">Group task: your share of the day's pool after the {taskType === 3 ? "tiered/base-limit" : "flat-rate pool"} split.</div>
+        <div className="pop-rate-note">
+          Group task: divided amongst {participantCount} employee{participantCount !== 1 ? "s" : ""} ({taskType === 3 ? "tiered/base-limit" : "flat-rate pool"} split).
+        </div>
       )}
     </>
   );
@@ -48,6 +57,8 @@ export default function ReportsPage() {
   const [day, setDay] = useState(todayISO());
   const [daily, setDaily] = useState(null);
   const [monthly, setMonthly] = useState(null);
+  const [tasksReportData, setTasksReportData] = useState([]);
+  const [tasksReportLoading, setTasksReportLoading] = useState(false);
   const [divisions, setDivisions] = useState([]);
   const [divisionFilter, setDivisionFilter] = useState("");
   const [loading, setLoading] = useState(false);
@@ -75,6 +86,15 @@ export default function ReportsPage() {
 
   useEffect(() => {
     let active = true;
+    if (tab === "tasks") {
+      setTasksReportLoading(true);
+      reportsApi.tasksReport(divisionFilter || undefined)
+        .then((r) => { if (active) setTasksReportData(r); })
+        .catch(() => { if (active) setTasksReportData([]); })
+        .finally(() => { if (active) setTasksReportLoading(false); });
+      return () => { active = false; };
+    }
+
     setLoading(true);
     (async () => {
       try {
@@ -122,9 +142,9 @@ export default function ReportsPage() {
     downloadBlob(blob, `incentivize-monthly-${month}.csv`);
   };
 
-  const exportMonthlyExcel = async () => {
-    const blob = await reportsApi.exportMonthlyCsv(month);
-    downloadBlob(blob, `incentivize-monthly-${month}.xls`);
+  const exportTasksCsv = async () => {
+    const blob = await reportsApi.exportTasksCsv(divisionFilter || undefined);
+    downloadBlob(blob, `incentivize-tasks-report.csv`);
   };
 
   const downloadPayslip = async (employeeId, code) => {
@@ -155,35 +175,89 @@ export default function ReportsPage() {
     <>
       <PageHead
         title="Incentive Reports"
-        subtitle="Daily and monthly incentive payouts across the workforce. Export to CSV for payroll / Excel, download a PDF payslip, or open the per-employee task grid."
+        subtitle="Daily and monthly incentive payouts, task details report, CSV exports, PDF payslips, and all-employee work grid."
         actions={
           <>
             <div className="row" style={{ background: "var(--surface)", borderRadius: 999, padding: "0.25rem", border: "1px solid var(--ink-100)" }}>
               <button className={`btn btn-sm ${tab === "monthly" ? "" : "btn-ghost"}`} onClick={() => setTab("monthly")}>Monthly</button>
               <button className={`btn btn-sm ${tab === "daily" ? "" : "btn-ghost"}`} onClick={() => setTab("daily")}>Daily</button>
+              <button className={`btn btn-sm ${tab === "tasks" ? "" : "btn-ghost"}`} onClick={() => setTab("tasks")}>Task Details</button>
             </div>
-            {tab === "daily" ? (
+            {tab === "daily" && (
               <input type="date" value={day} onChange={(e) => setDay(e.target.value)} style={{ width: "auto" }} />
-            ) : (
+            )}
+            {tab === "monthly" && (
               <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: "auto" }} />
             )}
             <select value={divisionFilter} onChange={(e) => setDivisionFilter(e.target.value)} style={{ width: "auto" }}>
               <option value="">{isSupervisor ? "My division" : "All divisions"}</option>
               {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
-            {tab === "daily" ? (
+            {tab === "daily" && (
               <button className="btn btn-gold btn-sm" onClick={exportDailyCsv} disabled={loading}>↓ Export CSV</button>
-            ) : (
-              <>
-                <button className="btn btn-gold btn-sm" onClick={exportMonthlyCsv} disabled={loading}>↓ Export CSV</button>
-                <button className="btn btn-sm" onClick={exportMonthlyExcel} disabled={loading}>↓ Excel</button>
-              </>
+            )}
+            {tab === "monthly" && (
+              <button className="btn btn-gold btn-sm" onClick={exportMonthlyCsv} disabled={loading}>↓ Export CSV</button>
+            )}
+            {tab === "tasks" && (
+              <button className="btn btn-gold btn-sm" onClick={exportTasksCsv} disabled={tasksReportLoading}>↓ Export Tasks CSV</button>
             )}
           </>
         }
       />
 
-      {tab === "daily" ? (
+      {tab === "tasks" ? (
+        <>
+          <div className="kpi-grid stagger" style={{ marginBottom: "1rem" }}>
+            <KPI tone="green" label="Total Tasks" value={tasksReportData.length} />
+            <KPI tone="gold" label="Active Tasks" value={tasksReportData.filter((t) => t.active).length} />
+            <KPI tone="blue" label="Divisions" value={new Set(tasksReportData.map((t) => t.division_id)).size} />
+          </div>
+          <Reveal>
+            <Card>
+              <h3 className="section-title">Detailed List of Tasks</h3>
+              {tasksReportLoading ? (
+                <table className="data"><tbody><SkeletonRows cols={8} /></tbody></table>
+              ) : tasksReportData.length === 0 ? (
+                <EmptyState title="No tasks found" message="No task records match the current filter." />
+              ) : (
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Task Name</th>
+                      <th>Division</th>
+                      <th>Task Type</th>
+                      <th>Rate (Rs.)</th>
+                      <th>Base Limit</th>
+                      <th>Unit</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tasksReportData.map((t) => (
+                      <tr key={t.id}>
+                        <td><code className="mono">{t.code || `TSK-${String(t.id).padStart(3, "0")}`}</code></td>
+                        <td><strong>{t.task_name}</strong></td>
+                        <td>{t.division_name ? `${t.division_name} (${t.division_code || ""})` : "—"}</td>
+                        <td>{taskTypeLabel(t.task_type)}</td>
+                        <td className="money">Rs. {Number(t.rate).toFixed(2)}</td>
+                        <td>{t.task_type === 3 ? formatNumber(t.base_limit) : "—"}</td>
+                        <td className="mono">{t.unit}</td>
+                        <td>
+                          <span className={`badge ${t.active ? "badge-green" : "badge-gray"}`}>
+                            {t.active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          </Reveal>
+        </>
+      ) : tab === "daily" ? (
         <>
           <div className="kpi-grid stagger" style={{ marginBottom: "1rem" }}>
             <KPI tone="green" label="Daily Payout" value={daily ? formatMoney(daily.grandTotal) : "—"} />

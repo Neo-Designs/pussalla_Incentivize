@@ -44,6 +44,7 @@ CREATE INDEX idx_employees_role ON employees(role);
 -- ---------------------------------------------------------
 CREATE TABLE tasks (
   id           SERIAL PRIMARY KEY,
+  code         VARCHAR(50) UNIQUE,
   division_id  INTEGER NOT NULL REFERENCES divisions(id) ON DELETE CASCADE,
   name         VARCHAR(150) NOT NULL,
   task_type    SMALLINT NOT NULL CHECK (task_type IN (1, 2, 3)),

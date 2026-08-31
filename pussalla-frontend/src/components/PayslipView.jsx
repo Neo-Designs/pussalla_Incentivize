@@ -41,8 +41,8 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
   const month = grid.month || "";
   const monthLabel = prettyMonth(month);
 
-  // Flatten the task x date grid into itemized rows (Date | Task | Units |
-  // Rate | Earnings), sorted by date then task name — same shape as the PDF.
+  // Flatten the task x date grid into itemized rows (Date | Task Code & Name |
+  // Units | No. of Tasks | Rate | Daily Earnings), sorted by date then task name.
   const items = [];
   for (const t of grid.tasks) {
     for (const dk of Object.keys(t.days)) {
@@ -50,9 +50,11 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
       items.push({
         dateKey: dk,
         date: `${month}-${dk}`,
+        taskCode: t.taskCode,
         task: t.task,
         taskType: t.taskType,
         unit: t.unit,
+        count: Number(c.count) || 1,
         output: Number(c.output) || 0,
         rate: Number(c.rate) || 0,
         amount: Number(c.amount) || 0,
@@ -111,7 +113,7 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
 
         {/* ---- Highlighted total payout summary ---- */}
         <div className="payslip-summary">
-          <div className="summary-label">Total incentive payout</div>
+          <div className="summary-label">Monthly Total Earnings</div>
           <div className="summary-amount">{formatMoney(grandTotal)}</div>
           <div className="summary-sub">
             {items.length} log(s) · {grid.tasks.length} task(s) · {formatNumber(totalUnits)} units
@@ -140,7 +142,7 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
                 {grid.tasks.map((t) => (
                   <tr key={t.taskId}>
                     <td className="cal-task">
-                      <strong>{t.task}</strong>
+                      <strong>{t.taskCode ? `[${t.taskCode}] ` : ""}{t.task}</strong>
                       <div className="muted cal-task-type">{taskTypeLabel(t.taskType)}</div>
                     </td>
                     {dates.map((d) => {
@@ -164,7 +166,7 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
         {/* ---- Detailed daily breakdown (core financial record) ---- */}
         <section className="payslip-section">
           <h4 className="payslip-section-title">Detailed daily breakdown</h4>
-          <p className="payslip-section-sub">Itemized per-day work: units completed, the incentive rate snapshot, and earnings for each task.</p>
+          <p className="payslip-section-sub">Itemized per-day work: dates, tasks completed, task count, units, rate snapshot, and daily earnings.</p>
           <div className="payslip-grid-scroll">
             <table className="payslip-table">
               <thead>
@@ -172,8 +174,9 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
                   <th className="col-date">Date</th>
                   <th className="col-task">Task</th>
                   <th className="col-units">Units completed</th>
+                  <th className="col-count num">No. of Tasks</th>
                   <th className="col-rate num">Incentive rate</th>
-                  <th className="col-earn num">Earnings</th>
+                  <th className="col-earn num">Daily Earnings</th>
                 </tr>
               </thead>
               <tbody>
@@ -181,10 +184,11 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
                   <tr key={`${it.date}-${it.task}-${i}`} className={i % 2 ? "row-alt" : ""}>
                     <td className="col-date">{formatDate(it.date)}</td>
                     <td className="col-task">
-                      <strong>{it.task}</strong>
+                      <strong>{it.taskCode ? `[${it.taskCode}] ` : ""}{it.task}</strong>
                       <div className="muted col-task-type">{taskTypeLabel(it.taskType)}</div>
                     </td>
                     <td className="col-units mono">{formatNumber(it.output)} <span className="unit-tag">{it.unit || ""}</span></td>
+                    <td className="col-count num mono">{it.count}</td>
                     <td className="col-rate num money">Rs. {it.rate.toFixed(2)}</td>
                     <td className="col-earn num money strong">Rs. {it.amount.toFixed(2)}</td>
                   </tr>
@@ -192,9 +196,8 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={3} className="tfoot-label">Total incentive payout</td>
-                  <td className="col-rate num" />
-                  <td className="col-earn num money strong">Rs. {grandTotal.toFixed(2)}</td>
+                  <td colSpan={5} className="tfoot-label">Monthly Total Earnings</td>
+                  <td className="col-earn num money strong" style={{ fontSize: "1.1rem" }}>Rs. {grandTotal.toFixed(2)}</td>
                 </tr>
               </tfoot>
             </table>

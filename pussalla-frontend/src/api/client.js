@@ -108,6 +108,7 @@ export const authApi = {
 // ---- divisions --------------------------------------------------------
 export const divisionsApi = {
   list: () => api.get("/api/divisions"),
+  create: (payload) => api.post("/api/divisions", payload),
 };
 
 // ---- employees --------------------------------------------------------
@@ -162,6 +163,8 @@ export const reportsApi = {
   analytics: (from, to, divisionId) => api.get("/api/reports/analytics" + qs({ from, to, divisionId })),
   exportMonthlyCsv: (month) => api.get(`/api/reports/monthly.csv?month=${encodeURIComponent(month)}`),
   exportDailyCsv: (date) => api.get(`/api/reports/daily.csv?date=${encodeURIComponent(date)}`),
+  tasksReport: (divisionId) => api.get("/api/reports/tasks-report" + qs({ divisionId })),
+  exportTasksCsv: (divisionId) => api.get("/api/reports/tasks.csv" + qs({ divisionId })),
   payslipPdf: (employeeId, month) =>
     api.get(`/api/reports/payslip.pdf?employeeId=${employeeId}&month=${encodeURIComponent(month)}`),
 };

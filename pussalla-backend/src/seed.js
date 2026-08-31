@@ -84,11 +84,14 @@ async function main() {
       { div: "FML", name: "Milling Batch Target Bonus", type: 3, rate: 3, baseLimit: 3000, unit: "kg" },
     ];
     const taskIds = {};
+    let taskIdx = 1;
     for (const t of TASKS) {
+      const code = `TSK-${String(taskIdx).padStart(3, "0")}`;
+      taskIdx++;
       const { rows } = await client.query(
-        `INSERT INTO tasks (division_id, name, task_type, rate, base_limit, unit)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-        [divisionIds[t.div], t.name, t.type, t.rate, t.baseLimit || null, t.unit]
+        `INSERT INTO tasks (code, division_id, name, task_type, rate, base_limit, unit)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [code, divisionIds[t.div], t.name, t.type, t.rate, t.baseLimit || null, t.unit]
       );
       taskIds[t.name] = rows[0].id;
     }

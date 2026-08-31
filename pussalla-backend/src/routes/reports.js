@@ -148,22 +148,33 @@ router.get("/monthly/:employeeId", requireAuth, requireRole(...ALLOWED_ROLES), a
 
   const { rows } = await pool.query(
     `SELECT e.id AS employee_id, e.code, e.name, d.name AS division_name,
-            l.log_date AS date, t.name AS task, t.task_type, l.total_output, t.unit,
-            p.share_amount AS amount
+            l.log_date AS date, t.code AS task_code, t.name AS task, t.task_type, t.unit,
+            COUNT(DISTINCT l.id) AS count,
+            SUM(l.total_output) AS total_output,
+            AVG(l.rate_snapshot) AS rate,
+            SUM(p.share_amount) AS amount
      FROM task_participants p
      JOIN daily_task_logs l ON l.id = p.daily_task_log_id
      JOIN tasks t ON t.id = l.task_id
      JOIN employees e ON e.id = p.employee_id
      LEFT JOIN divisions d ON d.id = e.home_division_id
      WHERE p.employee_id = $1 AND to_char(l.log_date, 'YYYY-MM') = $2
-     ORDER BY l.log_date`,
+     GROUP BY e.id, e.code, e.name, d.name, l.log_date, t.code, t.name, t.task_type, t.unit
+     ORDER BY l.log_date, t.name`,
     [employeeId, month]
   );
   if (!rows.length) return res.json({ employeeId: Number(employeeId), month, items: [], taskBreakdown: [], total: 0 });
 
   const items = rows.map((r) => ({
-    date: isoDate(r.date), task: r.task, taskType: r.task_type,
-    output: Number(r.total_output), unit: r.unit, amount: Number(r.amount),
+    date: isoDate(r.date),
+    taskCode: r.task_code,
+    task: r.task,
+    taskType: r.task_type,
+    count: Number(r.count),
+    output: Number(r.total_output),
+    unit: r.unit,
+    rate: Number(r.rate),
+    amount: Number(r.amount),
   }));
   const taskMap = {};
   for (const it of items) taskMap[it.task] = (taskMap[it.task] || 0) + it.amount;
@@ -176,11 +187,6 @@ router.get("/monthly/:employeeId", requireAuth, requireRole(...ALLOWED_ROLES), a
 });
 
 // GET /api/reports/employee-grid/:employeeId?month=2026-08
-// Returns a task x date grid for one employee: rows = tasks, columns = every
-// day in the month. Each cell holds the log count, total output and payout
-// amount. Row totals give the per-task payout; the grand total is the
-// person's incentive payout for the month. Used by the supervisor/HR/admin
-// breakdown view and the payslip PDF.
 router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
   const { employeeId } = req.params;
   const { month } = req.query;
@@ -190,9 +196,15 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
 
   const { rows } = await pool.query(
     `SELECT e.code, e.name, e.home_division_id, d.name AS division_name,
-            t.id AS task_id, t.name AS task, t.task_type, t.unit,
+            t.id AS task_id, t.code AS task_code, t.name AS task, t.task_type, t.unit,
             l.log_date AS date, l.id AS log_id, l.total_output, l.rate_snapshot AS rate,
-            p.share_amount AS amount
+            p.share_amount AS amount,
+            (
+              SELECT COUNT(DISTINCT tp.employee_id)
+              FROM task_participants tp
+              JOIN daily_task_logs dl ON dl.id = tp.daily_task_log_id
+              WHERE dl.task_id = t.id AND dl.log_date = l.log_date
+            ) AS participant_count
      FROM task_participants p
      JOIN daily_task_logs l ON l.id = p.daily_task_log_id
      JOIN tasks t ON t.id = l.task_id
@@ -212,19 +224,18 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
     const key = r.task_id;
     if (!taskIndex.has(key)) {
       taskIndex.set(key, {
-        taskId: r.task_id, task: r.task, taskType: r.task_type, unit: r.unit,
+        taskId: r.task_id, taskCode: r.task_code, task: r.task, taskType: r.task_type, unit: r.unit,
         days: {}, taskTotal: 0, logCount: 0,
       });
     }
     const t = taskIndex.get(key);
     const dk = dayKey(r.date);
-    if (!t.days[dk]) t.days[dk] = { count: 0, output: 0, amount: 0, rate: 0 };
+    if (!t.days[dk]) t.days[dk] = { count: 0, output: 0, amount: 0, rate: 0, participantCount: 1 };
     t.days[dk].count += 1;
     t.days[dk].output += Number(r.total_output);
-    // Record the per-unit incentive rate snapshot for that day (last log wins
-    // for a given day; for type-1 logs the rate equals the per-unit rate).
     t.days[dk].rate = Number(r.rate);
     t.days[dk].amount += Number(r.amount);
+    t.days[dk].participantCount = Number(r.participant_count || 1);
     t.taskTotal += Number(r.amount);
     t.logCount += 1;
   }
@@ -241,16 +252,11 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
 
 
 // GET /api/reports/all-employee-grid?month=2026-08&divisionId=
-// Returns a task x date grid for EVERY employee in scope (all, or filtered by
-// division). Each employee carries their own list of task rows; each task row
-// has per-day cells { count, output, amount }. The employee name/code cell
-// is meant to be rowspan-merged across the employee's task rows on the
-// client. Used by the all-employee work-breakdown grid on the Reports page.
 router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
   const { month, divisionId } = req.query;
   if (!month) return res.status(400).json({ error: "month query param is required (YYYY-MM)" });
 
-  const dates = monthDayKeys(month); // ["01" .. "<lastDay>"]
+  const dates = monthDayKeys(month);
 
   const clauses = ["to_char(l.log_date, 'YYYY-MM') = $1"];
   const params = [month];
@@ -259,9 +265,15 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
 
   const { rows } = await pool.query(
     `SELECT e.id AS employee_id, e.code, e.name, d.name AS division_name,
-            t.id AS task_id, t.name AS task, t.task_type, t.unit,
+            t.id AS task_id, t.code AS task_code, t.name AS task, t.task_type, t.unit,
             l.log_date AS date, l.total_output, l.rate_snapshot AS rate,
-            p.share_amount AS amount
+            p.share_amount AS amount,
+            (
+              SELECT COUNT(DISTINCT tp.employee_id)
+              FROM task_participants tp
+              JOIN daily_task_logs dl ON dl.id = tp.daily_task_log_id
+              WHERE dl.task_id = t.id AND dl.log_date = l.log_date
+            ) AS participant_count
      FROM task_participants p
      JOIN daily_task_logs l ON l.id = p.daily_task_log_id
      JOIN tasks t ON t.id = l.task_id
@@ -272,8 +284,6 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
     params
   );
 
-  // Also include employees with no logs this month so the grid shows everyone
-  // (name/code merged cell) rather than only those who earned something.
   const empParams = [];
   const empClauses = [];
   if (divisionId) { empParams.push(divisionId); empClauses.push(`home_division_id = $${empParams.length}`); }
@@ -293,7 +303,7 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
     });
   }
 
-  const taskIndex = new Map(); // employeeId -> taskId -> task obj
+  const taskIndex = new Map();
   for (const r of rows) {
     const emp = byEmp.get(r.employee_id);
     if (!emp) continue;
@@ -301,18 +311,18 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
     const ti = taskIndex.get(r.employee_id);
     if (!ti.has(r.task_id)) {
       ti.set(r.task_id, {
-        taskId: r.task_id, task: r.task, taskType: r.task_type, unit: r.unit,
+        taskId: r.task_id, taskCode: r.task_code, task: r.task, taskType: r.task_type, unit: r.unit,
         days: {}, taskTotal: 0,
       });
     }
     const t = ti.get(r.task_id);
     const dk = dayKey(r.date);
-    if (!t.days[dk]) t.days[dk] = { count: 0, output: 0, amount: 0, rate: 0 };
+    if (!t.days[dk]) t.days[dk] = { count: 0, output: 0, amount: 0, rate: 0, participantCount: 1 };
     t.days[dk].count += 1;
     t.days[dk].output += Number(r.total_output);
-    // Per-unit incentive rate snapshot for that day (last log wins for the day).
     t.days[dk].rate = Number(r.rate);
     t.days[dk].amount += Number(r.amount);
+    t.days[dk].participantCount = Number(r.participant_count || 1);
     t.taskTotal += Number(r.amount);
     emp.total += Number(r.amount);
   }
@@ -335,7 +345,7 @@ router.get("/monthly.csv", requireAuth, requireRole(...ALLOWED_ROLES), async (re
   if (!month) return res.status(400).json({ error: "month query param is required (YYYY-MM)" });
   const { rows } = await pool.query(
     `SELECT e.code, e.name, d.name AS division_name,
-            l.log_date AS date, t.name AS task, p.share_amount AS amount
+            l.log_date AS date, t.code AS task_code, t.name AS task, p.share_amount AS amount
      FROM task_participants p
      JOIN daily_task_logs l ON l.id = p.daily_task_log_id
      JOIN tasks t ON t.id = l.task_id
@@ -345,9 +355,59 @@ router.get("/monthly.csv", requireAuth, requireRole(...ALLOWED_ROLES), async (re
      ORDER BY e.id, l.log_date`,
     [month]
   );
-  const out = [["Employee Code", "Name", "Division", "Date", "Task", "Amount"]];
-  rows.forEach((r) => out.push([r.code, r.name, r.division_name || "", isoDate(r.date), r.task, Number(r.amount).toFixed(2)]));
+  const out = [["Employee Code", "Name", "Division", "Date", "Task Code", "Task", "Amount"]];
+  rows.forEach((r) => out.push([r.code, r.name, r.division_name || "", isoDate(r.date), r.task_code || "", r.task, Number(r.amount).toFixed(2)]));
   sendCsv(res, `incentivize-monthly-${month}.csv`, out);
+});
+
+// GET /api/reports/tasks-report?divisionId=
+router.get("/tasks-report", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  const { divisionId } = req.query;
+  const params = [];
+  const clauses = [];
+  if (divisionId) { params.push(divisionId); clauses.push(`t.division_id = $${params.length}`); }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+
+  const { rows } = await pool.query(
+    `SELECT t.id, t.code, t.name AS task_name, t.task_type, t.rate, t.base_limit, t.unit, t.active,
+            d.id AS division_id, d.code AS division_code, d.name AS division_name
+     FROM tasks t
+     LEFT JOIN divisions d ON d.id = t.division_id
+     ${where}
+     ORDER BY d.name, t.code, t.name`,
+    params
+  );
+  res.json(rows);
+});
+
+// GET /api/reports/tasks.csv?divisionId=
+router.get("/tasks.csv", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  const { divisionId } = req.query;
+  const params = [];
+  const clauses = [];
+  if (divisionId) { params.push(divisionId); clauses.push(`t.division_id = $${params.length}`); }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+
+  const { rows } = await pool.query(
+    `SELECT t.code AS task_code, t.name AS task_name, d.code AS division_code, d.name AS division_name,
+            t.task_type, t.rate, t.base_limit, t.unit, t.active
+     FROM tasks t
+     LEFT JOIN divisions d ON d.id = t.division_id
+     ${where}
+     ORDER BY d.name, t.code, t.name`,
+    params
+  );
+
+  const out = [["Task Code", "Task Name", "Division Code", "Division Name", "Task Type", "Rate (Rs)", "Base Limit", "Unit", "Status"]];
+  rows.forEach((r) => {
+    const typeLabel = r.task_type === 1 ? "Individual Flat Rate" : r.task_type === 2 ? "Group Pool" : "Group Tiered";
+    out.push([
+      r.task_code || "", r.task_name, r.division_code || "", r.division_name || "",
+      typeLabel, Number(r.rate).toFixed(2), r.base_limit != null ? Number(r.base_limit) : "", r.unit,
+      r.active ? "Active" : "Inactive"
+    ]);
+  });
+  sendCsv(res, `incentivize-tasks-report.csv`, out);
 });
 
 // GET /api/reports/payslip.pdf?employeeId=X&month=2026-08
