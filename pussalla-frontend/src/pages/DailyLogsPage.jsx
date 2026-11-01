@@ -4,7 +4,7 @@ import { useToast } from "../context/ToastContext";
 import Card, { PageHead, KPI, EmptyState, Badge, SkeletonRows } from "../components/Card.jsx";
 import Modal, { ConfirmDialog } from "../components/Modal.jsx";
 import { MiniSpinner } from "../components/Loaders.jsx";
-import { dailyLogsApi, tasksApi, employeesApi, divisionsApi, crossApi } from "../api/client";
+import { dailyLogsApi, tasksApi, employeesApi, divisionsApi, subDivisionsApi, crossApi } from "../api/client";
 import {
   formatMoney, formatNumber, formatDate, taskTypeLabel, calcEngine,
   todayISO, initials, hasRole,
@@ -23,6 +23,8 @@ export default function DailyLogsPage() {
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState(todayISO());
   const [filterDiv, setFilterDiv] = useState(user.homeDivisionId || "");
+  const [subDivisions, setSubDivisions] = useState([]);
+  const [filterSubDiv, setFilterSubDiv] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
@@ -35,6 +37,7 @@ export default function DailyLogsPage() {
       const params = {};
       if (filterDate) params.date = filterDate;
       if (filterDiv) params.divisionId = filterDiv;
+      if (filterSubDiv) params.subDivisionId = filterSubDiv;
       // Cross-assignments INTO the filtered division on the filtered date tell
       // us which employees are temporarily rostered there that day.
       const crossParams = {};
@@ -59,7 +62,15 @@ export default function DailyLogsPage() {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [filterDate, filterDiv]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [filterDate, filterDiv, filterSubDiv]);
+
+  // Sub-division options depend on the chosen division filter; reset when it changes.
+  useEffect(() => {
+    setFilterSubDiv("");
+    if (!filterDiv) { setSubDivisions([]); return; }
+    subDivisionsApi.list(filterDiv).then(setSubDivisions).catch(() => setSubDivisions([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterDiv]);
 
   const empName = (id) => employees.find((e) => e.id === id)?.name || `#${id}`;
   const divName = (id) => divisions.find((d) => d.id === id)?.name || "—";
@@ -96,6 +107,15 @@ export default function DailyLogsPage() {
               {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
+          {filterDiv && (
+            <div>
+              <label>Sub-division</label>
+              <select value={filterSubDiv} onChange={(e) => setFilterSubDiv(e.target.value)} style={{ width: "auto" }}>
+                <option value="">All sub-divisions</option>
+                {subDivisions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
           <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
         </div>
       </Card>
@@ -182,6 +202,10 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
   const [divisionId, setDivisionId] = useState(editTarget?.division_id || defaultDivisionId || "");
   const [taskId, setTaskId] = useState(editTarget?.task_id || "");
   const [tasks, setTasks] = useState([]);
+  const [modalSubDivs, setModalSubDivs] = useState([]);
+  const [subDivisionId, setSubDivisionId] = useState("");
+  const [showOthers, setShowOthers] = useState(false);
+  const [empSearch, setEmpSearch] = useState("");
   const [tasksLoading, setTasksLoading] = useState(false);
 
   // Cross-assignments INTO the modal's selected division, active as of the
@@ -229,7 +253,9 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
       tasksApi.list(divisionId).then(setTasks).catch(() => setTasks([])).finally(() => setTasksLoading(false));
       return;
     }
-    if (!divisionId) { setTasks([]); setTaskId(""); return; }
+    if (!divisionId) { setTasks([]); setTaskId(""); setModalSubDivs([]); setSubDivisionId(""); return; }
+    setSubDivisionId("");
+    subDivisionsApi.list(divisionId).then(setModalSubDivs).catch(() => setModalSubDivs([]));
     setTasksLoading(true);
     tasksApi.list(divisionId)
       .then(setTasks)
@@ -248,7 +274,24 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
     return tasks.find((t) => t.id === Number(taskId));
   }, [editTarget, tasks, taskId]);
 
+  // Tasks offered in the dropdown: narrowed to the chosen sub-division.
+  const tasksForPicker = useMemo(
+    () => (subDivisionId ? tasks.filter((t) => Number(t.sub_division_id) === Number(subDivisionId)) : tasks),
+    [tasks, subDivisionId]
+  );
+  // Picking a sub-division with a single task selects that task automatically.
+  useEffect(() => {
+    if (editTarget) return;
+    if (subDivisionId && tasksForPicker.length === 1) setTaskId(String(tasksForPicker[0].id));
+    else setTaskId("");
+    setParticipantIds([]);
+    setShowOthers(false);
+    setEmpSearch("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subDivisionId, tasksForPicker]);
+
   const isType1 = selectedTask?.task_type === 1;
+  const isType4 = selectedTask?.task_type === 4;
 
   // Live calc preview.
   const preview = useMemo(() => {
@@ -264,19 +307,39 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
       }, { total: 0, perWorker: [] });
     }
     const workers = participantIds.length;
+    if (isType4) return { ...calcEngine(selectedTask, workers, workers), count: workers };
     if (!totalOutput || !workers) return { total: 0, perWorker: 0, count: workers };
     return { ...calcEngine(selectedTask, Number(totalOutput), workers), count: workers };
-  }, [selectedTask, isType1, entries, totalOutput, participantIds]);
+  }, [selectedTask, isType1, isType4, entries, totalOutput, participantIds]);
 
+  // When the selected task is scoped to a sub-division (e.g. "Birds Unloading"
+  // within Ganewaththa), only that sub-division's own staff are valid
+  // participants — a cross-assigned worker is still let in regardless, since
+  // cross-assignments are tracked at the division level, not sub-division.
+  const taskSubDivisionId = selectedTask?.sub_division_id;
   const validEmployees = useMemo(
     () => employees.filter(
       (e) => e.active !== false && (
-        (!divisionId || Number(e.home_division_id) === Number(divisionId)) ||
+        (
+          (!divisionId || Number(e.home_division_id) === Number(divisionId)) &&
+          (showOthers || !taskSubDivisionId || Number(e.sub_division_id) === Number(taskSubDivisionId))
+        ) ||
         Object.prototype.hasOwnProperty.call(modalCrossMap, Number(e.id))
       )
     ),
-    [employees, divisionId, modalCrossMap]
+    [employees, divisionId, modalCrossMap, taskSubDivisionId, showOthers]
   );
+  // Checklist after the search box; the task's own sub-division is listed first.
+  const checklistEmployees = useMemo(() => {
+    const q = empSearch.trim().toLowerCase();
+    const list = q
+      ? validEmployees.filter((e) => `${e.name} ${e.code}`.toLowerCase().includes(q))
+      : validEmployees;
+    if (!taskSubDivisionId) return list;
+    const own = (e) => Number(e.sub_division_id) === Number(taskSubDivisionId);
+    return [...list.filter(own), ...list.filter((e) => !own(e))];
+  }, [validEmployees, empSearch, taskSubDivisionId]);
+  const subDivNameOf = (id) => modalSubDivs.find((s) => Number(s.id) === Number(id))?.name;
 
   const crossFromName = (empId) => {
     const fromId = modalCrossMap[Number(empId)];
@@ -310,12 +373,15 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
         onSaved();
       } catch (e) { toast.error(e.message); } finally { setSaving(false); }
     } else {
-      if (!totalOutput || !participantIds.length) { toast.error("Total output and at least one participant are required"); return; }
+      if (!participantIds.length || (!isType4 && !totalOutput)) {
+        toast.error(isType4 ? "Tick at least one person who was present" : "Total output and at least one participant are required");
+        return;
+      }
       setSaving(true);
       try {
         await dailyLogsApi.create({
           date, divisionId: Number(divisionId), taskId: Number(taskId),
-          totalOutput: Number(totalOutput), participantIds,
+          ...(isType4 ? {} : { totalOutput: Number(totalOutput) }), participantIds,
         });
         toast.success("Group log saved");
         onSaved();
@@ -346,7 +412,7 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
       footer={
         <>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" onClick={isEdit ? submitEdit : submit} disabled={saving || !selectedTask}>
+          <button className="btn" onClick={isEdit ? submitEdit : submit} disabled={saving || !selectedTask || (isEdit && isType4)}>
             {saving ? <><MiniSpinner /> Saving…</> : isEdit ? "Save changes" : "Save log"}
           </button>
         </>
@@ -368,13 +434,22 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
 
       {!isEdit && (
         <div style={{ marginTop: "0.75rem" }}>
+          {modalSubDivs.length > 0 && (
+            <div style={{ marginBottom: "0.75rem" }}>
+              <label>Sub-division</label>
+              <select value={subDivisionId} onChange={(e) => setSubDivisionId(e.target.value)}>
+                <option value="">All sub-divisions</option>
+                {modalSubDivs.map((sd) => <option key={sd.id} value={sd.id}>{sd.name}</option>)}
+              </select>
+            </div>
+          )}
           <label>Task</label>
           {tasksLoading ? <InlineMini label="Loading tasks…" /> : (
-            <select value={taskId} onChange={(e) => setTaskId(e.target.value)}>
+            <select value={taskId} onChange={(e) => { setTaskId(e.target.value); setParticipantIds([]); }}>
               <option value="">Select…</option>
-              {tasks.map((t) => (
+              {tasksForPicker.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.name} — {taskTypeLabel(t.task_type)} · {formatMoney(t.rate)}/{t.unit}
+                  {t.name} — {taskTypeLabel(t.task_type)} · {formatMoney(t.rate)}/{t.task_type === 4 ? "person/day" : t.unit}
                 </option>
               ))}
             </select>
@@ -397,9 +472,15 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
         <div className="card" style={{ marginTop: "0.9rem", background: "var(--pussalla-green-050)", border: "1px solid var(--pussalla-green-100)" }}>
           <div className="spread">
             <strong>Calculation preview</strong>
-            <Badge tone={isType1 ? "green" : selectedTask.task_type === 3 ? "blue" : "gold"}>{taskTypeLabel(selectedTask.task_type)}</Badge>
+            <Badge tone={isType1 || isType4 ? "green" : selectedTask.task_type === 3 ? "blue" : "gold"}>{taskTypeLabel(selectedTask.task_type)}</Badge>
           </div>
-          {isType1 ? (
+          {isType4 ? (
+            <div className="muted" style={{ fontSize: "0.85rem", marginTop: "0.3rem" }}>
+              {participantIds.length} present × {formatMoney(selectedTask.rate)} = {" "}
+              <strong style={{ color: "var(--pussalla-green-700)" }}>{formatMoney(preview.total)}</strong>
+              {isEdit && <> · fixed-rate entries can't be edited — delete and re-log to change who was present.</>}
+            </div>
+          ) : isType1 ? (
             <div className="muted" style={{ fontSize: "0.85rem", marginTop: "0.3rem" }}>
               {preview.perWorker.length} valid entr{preview.perWorker.length === 1 ? "y" : "ies"} · total payout{" "}
               <strong style={{ color: "var(--pussalla-green-700)" }}>{formatMoney(preview.total)}</strong>
@@ -441,26 +522,49 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
       {/* Type 2/3 — pooled */}
       {selectedTask && !isType1 && (
         <>
-          <div style={{ marginTop: "0.9rem" }}>
-            <label>Total output ({selectedTask.unit})</label>
-            <input type="number" min="0" step="any" value={totalOutput} onChange={(e) => setTotalOutput(e.target.value)} />
-          </div>
+          {!isType4 && (
+            <div style={{ marginTop: "0.9rem" }}>
+              <label>Total output ({selectedTask.unit})</label>
+              <input type="number" min="0" step="any" value={totalOutput} onChange={(e) => setTotalOutput(e.target.value)} />
+            </div>
+          )}
           {!isEdit && (
             <div style={{ marginTop: "0.9rem" }}>
-              <label>Participants ({participantIds.length} selected)</label>
-              <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid var(--ink-100)", borderRadius: "var(--radius-sm)", padding: "0.4rem" }}>
-                {validEmployees.length === 0 ? (
-                  <span className="muted">No employees in this division.</span>
+              <div className="spread" style={{ marginBottom: "0.3rem", flexWrap: "wrap", gap: "0.4rem" }}>
+                <label style={{ margin: 0 }}>{isType4 ? "Present today" : "Participants"} ({participantIds.length} selected)</label>
+                <div className="row" style={{ gap: "0.3rem" }}>
+                  <button type="button" className="btn btn-ghost btn-sm"
+                    onClick={() => setParticipantIds((arr) => [...new Set([...arr, ...checklistEmployees.map((e) => Number(e.id))])])}>
+                    Select all shown
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setParticipantIds([])}>Clear</button>
+                </div>
+              </div>
+              <div className="row" style={{ gap: "0.6rem", marginBottom: "0.4rem", flexWrap: "wrap" }}>
+                <input placeholder="Search name or code…" value={empSearch} onChange={(e) => setEmpSearch(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
+                {taskSubDivisionId && (
+                  <label className="row" style={{ margin: 0, gap: "0.3rem", fontSize: "0.82rem", cursor: "pointer" }}>
+                    <input type="checkbox" checked={showOthers} onChange={(e) => setShowOthers(e.target.checked)} style={{ width: "auto" }} />
+                    Show employees from other sub-divisions
+                  </label>
+                )}
+              </div>
+              <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid var(--ink-100)", borderRadius: "var(--radius-sm)", padding: "0.4rem" }}>
+                {checklistEmployees.length === 0 ? (
+                  <span className="muted">{empSearch ? "No match." : "No employees assigned to this task's sub-division yet."}</span>
                 ) : (
                   <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "0.3rem" }}>
-                    {validEmployees.map((emp) => {
+                    {checklistEmployees.map((emp) => {
                       const from = crossFromName(emp.id);
+                      const otherSub = showOthers && taskSubDivisionId && Number(emp.sub_division_id) !== Number(taskSubDivisionId)
+                        ? subDivNameOf(emp.sub_division_id) || "no sub-division" : null;
                       return (
                         <label key={emp.id} className="row" style={{ fontSize: "0.85rem", cursor: "pointer", gap: "0.4rem" }}>
                           <input type="checkbox" checked={participantIds.includes(emp.id)} onChange={() => toggleParticipant(emp.id)} style={{ width: "auto" }} />
                           <span>
                             {emp.name} <span className="muted">{emp.code}</span>
                             {from && <Badge tone="red" style={{ marginLeft: "0.3rem", fontSize: "0.66rem" }}>cross-assigned from {from}</Badge>}
+                            {otherSub && <Badge tone="grey" style={{ marginLeft: "0.3rem", fontSize: "0.66rem" }}>{otherSub}</Badge>}
                           </span>
                         </label>
                       );

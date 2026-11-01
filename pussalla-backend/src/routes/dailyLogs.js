@@ -7,14 +7,15 @@ const { parsePagination } = require("../utils/pagination");
 
 const router = express.Router();
 
-// GET /api/daily-logs?date=2026-08-11&divisionId=1&page=1&limit=50
+// GET /api/daily-logs?date=2026-08-11&divisionId=1&subDivisionId=2&page=1&limit=50
 router.get("/", requireAuth, async (req, res) => {
   const { page, limit, offset } = parsePagination(req);
-  const { date, divisionId } = req.query;
+  const { date, divisionId, subDivisionId } = req.query;
   const clauses = [];
   const params = [];
   if (date) { params.push(date); clauses.push(`l.log_date = $${params.length}`); }
   if (divisionId) { params.push(divisionId); clauses.push(`l.division_id = $${params.length}`); }
+  if (subDivisionId) { params.push(subDivisionId); clauses.push(`l.sub_division_id = $${params.length}`); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
   const baseSelect = `FROM daily_task_logs l
@@ -45,10 +46,12 @@ router.get("/", requireAuth, async (req, res) => {
  *   entries: [{ employeeId, output }]   // Type 1 - one or more individual rows
  *   OR
  *   totalOutput, participantIds: [ids]  // Type 2 / Type 3 - one pooled row
+ *   participantIds: [ids]               // Type 4 - fixed rate each, one row
  * }
  */
 router.post("/", requireAuth, requireRole("supervisor"), async (req, res) => {
-  const { date, divisionId, taskId, entries, totalOutput, participantIds } = req.body;
+  const { date, divisionId, taskId, entries } = req.body;
+  let { totalOutput, participantIds } = req.body;
   if (!date || !divisionId || !taskId) {
     return res.status(400).json({ error: "date, divisionId and taskId are required" });
   }
@@ -71,9 +74,9 @@ router.post("/", requireAuth, requireRole("supervisor"), async (req, res) => {
         const { total } = calcEngine(task, en.output, 1);
         const { rows } = await client.query(
           `INSERT INTO daily_task_logs
-            (log_date, division_id, task_id, total_output, rate_snapshot, base_limit_snapshot, amount, entered_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-          [date, divisionId, taskId, en.output, task.rate, task.base_limit, total, req.user.id]
+            (log_date, division_id, sub_division_id, task_id, total_output, rate_snapshot, base_limit_snapshot, amount, entered_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+          [date, divisionId, task.sub_division_id, taskId, en.output, task.rate, task.base_limit, total, req.user.id]
         );
         const log = rows[0];
         await client.query(
@@ -87,16 +90,34 @@ router.post("/", requireAuth, requireRole("supervisor"), async (req, res) => {
         created.push(log);
       }
     } else {
-      if (!totalOutput || !Array.isArray(participantIds) || !participantIds.length) {
+      const isFixedRate = task.task_type === 4;
+      const uniqueIds = Array.isArray(participantIds) ? [...new Set(participantIds.map(Number))] : [];
+      if (!uniqueIds.length || (!isFixedRate && !totalOutput)) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ error: "totalOutput and participantIds[] are required for Type 2/3 tasks" });
+        return res.status(400).json({
+          error: isFixedRate
+            ? "participantIds[] is required for a Type 4 (fixed daily rate) task"
+            : "totalOutput and participantIds[] are required for Type 2/3 tasks",
+        });
       }
+      // A pooled task is logged once per day: a second entry would pay everyone twice.
+      const { rows: dupRows } = await client.query(
+        "SELECT id FROM daily_task_logs WHERE task_id=$1 AND log_date=$2 LIMIT 1", [taskId, date]
+      );
+      if (dupRows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "This task is already logged for that date. Edit or delete the existing entry instead." });
+      }
+      // Type 4 records the headcount as its output so reports show "N persons".
+      const effectiveOutput = isFixedRate ? uniqueIds.length : totalOutput;
+      participantIds = uniqueIds;
+      totalOutput = effectiveOutput;
       const { total, perWorker } = calcEngine(task, totalOutput, participantIds.length);
       const { rows } = await client.query(
         `INSERT INTO daily_task_logs
-          (log_date, division_id, task_id, total_output, rate_snapshot, base_limit_snapshot, amount, entered_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [date, divisionId, taskId, totalOutput, task.rate, task.base_limit, total, req.user.id]
+          (log_date, division_id, sub_division_id, task_id, total_output, rate_snapshot, base_limit_snapshot, amount, entered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [date, divisionId, task.sub_division_id, taskId, totalOutput, task.rate, task.base_limit, total, req.user.id]
       );
       const log = rows[0];
       for (const empId of participantIds) {
@@ -146,6 +167,10 @@ router.put("/:id", requireAuth, requireRole("supervisor"), async (req, res) => {
       "SELECT employee_id FROM task_participants WHERE daily_task_log_id=$1", [id]
     );
     const workerCount = participantRows.length;
+    if (task.task_type === 4) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Type 4 (fixed daily rate) entries have no output to edit. Delete and re-log the entry to change who was present." });
+    }
     const { total, perWorker } = calcEngine(task, totalOutput, workerCount);
 
     const { rows } = await client.query(

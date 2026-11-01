@@ -111,6 +111,14 @@ export const divisionsApi = {
   create: (payload) => api.post("/api/divisions", payload),
 };
 
+// ---- sub-divisions ------------------------------------------------------
+export const subDivisionsApi = {
+  list: (divisionId) => api.get("/api/sub-divisions" + qs({ divisionId })),
+  create: (payload) => api.post("/api/sub-divisions", payload),
+  update: (id, payload) => api.put(`/api/sub-divisions/${id}`, payload),
+  remove: (id) => api.del(`/api/sub-divisions/${id}`),
+};
+
 // ---- employees --------------------------------------------------------
 // list() returns { rows, page, limit, total }. Pass { page, limit, q, ... }
 // for paginated/filterable access; omit for a default page.
@@ -151,16 +159,16 @@ export const dailyLogsApi = {
 
 // ---- reports ----------------------------------------------------------
 export const reportsApi = {
-  daily: (date, divisionId) => api.get("/api/reports/daily" + qs({ date, divisionId })),
-  monthly: (month, divisionId) => api.get("/api/reports/monthly" + qs({ month, divisionId })),
+  daily: (date, divisionId, subDivisionId) => api.get("/api/reports/daily" + qs({ date, divisionId, subDivisionId })),
+  monthly: (month, divisionId, subDivisionId) => api.get("/api/reports/monthly" + qs({ month, divisionId, subDivisionId })),
   monthlyEmployee: (employeeId, month) =>
     api.get(`/api/reports/monthly/${employeeId}?month=${encodeURIComponent(month)}`),
   employeeGrid: (employeeId, month) =>
     api.get(`/api/reports/employee-grid/${employeeId}?month=${encodeURIComponent(month)}`),
-  allEmployeeGrid: (month, divisionId) =>
-    api.get("/api/reports/all-employee-grid" + qs({ month, divisionId })),
+  allEmployeeGrid: (month, divisionId, subDivisionId) =>
+    api.get("/api/reports/all-employee-grid" + qs({ month, divisionId, subDivisionId })),
   myEarnings: (from, to) => api.get("/api/reports/my-earnings" + qs({ from, to })),
-  analytics: (from, to, divisionId) => api.get("/api/reports/analytics" + qs({ from, to, divisionId })),
+  analytics: (from, to, divisionId, subDivisionId) => api.get("/api/reports/analytics" + qs({ from, to, divisionId, subDivisionId })),
   exportMonthlyCsv: (month) => api.get(`/api/reports/monthly.csv?month=${encodeURIComponent(month)}`),
   exportDailyCsv: (date) => api.get(`/api/reports/daily.csv?date=${encodeURIComponent(date)}`),
   tasksReport: (divisionId) => api.get("/api/reports/tasks-report" + qs({ divisionId })),

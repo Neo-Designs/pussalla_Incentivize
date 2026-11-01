@@ -74,6 +74,7 @@ export const TASK_TYPES = {
   1: { label: "Individual Flat Rate", short: "Type 1", color: "var(--pussalla-green-600)" },
   2: { label: "Group Flat-Rate Pool", short: "Type 2", color: "var(--pussalla-gold-600)" },
   3: { label: "Group Daily Limit / Tiered", short: "Type 3", color: "var(--info)" },
+  4: { label: "Fixed Daily Rate / Person", short: "Type 4", color: "var(--pussalla-green-800, #2f5d3a)" },
 };
 
 export function taskTypeLabel(t) {
@@ -97,6 +98,10 @@ export function calcEngine(task, totalOutput, workerCount) {
     const excess = Math.max(0, output - Number(task.base_limit));
     const total = excess * rate;
     return { total, perWorker: workerCount > 0 ? total / workerCount : 0 };
+  }
+  if (task.task_type === 4) {
+    const perWorker = workerCount > 0 ? rate : 0;
+    return { total: perWorker * workerCount, perWorker };
   }
   return { total: 0, perWorker: 0 };
 }

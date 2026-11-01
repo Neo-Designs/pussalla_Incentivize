@@ -10,10 +10,10 @@ const router = express.Router();
 
 const VALID_ROLES = ["employee", "supervisor", "hr", "admin"];
 
-// GET /api/employees?page=1&limit=50&q=&role=&divisionId=&active=
+// GET /api/employees?page=1&limit=50&q=&role=&divisionId=&subDivisionId=&active=
 router.get("/", requireAuth, async (req, res) => {
   const { page, limit, offset } = parsePagination(req);
-  const { q, role, divisionId, active } = req.query;
+  const { q, role, divisionId, subDivisionId, active } = req.query;
 
   const clauses = [];
   const params = [];
@@ -23,13 +23,14 @@ router.get("/", requireAuth, async (req, res) => {
   }
   if (role) { params.push(role); clauses.push(`role = $${params.length}`); }
   if (divisionId) { params.push(divisionId); clauses.push(`home_division_id = $${params.length}`); }
+  if (subDivisionId) { params.push(subDivisionId); clauses.push(`sub_division_id = $${params.length}`); }
   if (active === "true") clauses.push(`active = true`);
   if (active === "false") clauses.push(`active = false`);
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
   const [{ rows }, { rows: countRows }] = await Promise.all([
     pool.query(
-      `SELECT id, code, name, home_division_id, role, active, created_at
+      `SELECT id, code, name, home_division_id, sub_division_id, role, active, created_at
        FROM employees ${where}
        ORDER BY id
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -42,7 +43,7 @@ router.get("/", requireAuth, async (req, res) => {
 
 // POST /api/employees  (HR, Admin, Super Admin)
 router.post("/", requireAuth, requireRole("hr", "admin", "super_admin"), async (req, res) => {
-  const { code, name, homeDivisionId, role, password } = req.body;
+  const { code, name, homeDivisionId, subDivisionId, role, password } = req.body;
   if (!code || !name || !password) {
     return res.status(400).json({ error: "code, name and password are required" });
   }
@@ -54,10 +55,10 @@ router.post("/", requireAuth, requireRole("hr", "admin", "super_admin"), async (
     await client.query("BEGIN");
     const passwordHash = await bcrypt.hash(password, 10);
     const { rows } = await client.query(
-      `INSERT INTO employees (code, name, home_division_id, role, password_hash)
-       VALUES ($1,$2,$3,$4,$5)
-       RETURNING id, code, name, home_division_id, role, active, created_at`,
-      [code, name, homeDivisionId || null, role || "employee", passwordHash]
+      `INSERT INTO employees (code, name, home_division_id, sub_division_id, role, password_hash)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, code, name, home_division_id, sub_division_id, role, active, created_at`,
+      [code, name, homeDivisionId || null, subDivisionId || null, role || "employee", passwordHash]
     );
     const emp = rows[0];
     await writeAudit(client, {
@@ -83,7 +84,7 @@ router.post("/", requireAuth, requireRole("hr", "admin", "super_admin"), async (
 // password; hr/admin may edit profile fields but not set passwords here.
 router.put("/:id", requireAuth, requireRole("hr", "admin", "super_admin"), async (req, res) => {
   const { id } = req.params;
-  const { name, homeDivisionId, role, active, password } = req.body;
+  const { name, homeDivisionId, subDivisionId, role, active, password } = req.body;
   if (role && !VALID_ROLES.includes(role) && role !== "super_admin") {
     return res.status(400).json({ error: `invalid role '${role}'` });
   }
@@ -97,16 +98,21 @@ router.put("/:id", requireAuth, requireRole("hr", "admin", "super_admin"), async
     if (!existingRows[0]) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Not found" }); }
     const before = existingRows[0];
 
+    // sub_division_id is nullable, so an explicit "" clear must win over
+    // COALESCE (which would otherwise keep the previous value).
+    const nextSubDivisionId = subDivisionId === "" ? null : (subDivisionId ?? before.sub_division_id);
+
     const { rows } = await client.query(
       `UPDATE employees SET
          name = COALESCE($1, name),
          home_division_id = COALESCE($2, home_division_id),
-         role = COALESCE($3, role),
-         active = COALESCE($4, active),
+         sub_division_id = $3,
+         role = COALESCE($4, role),
+         active = COALESCE($5, active),
          updated_at = now()
-       WHERE id = $5
-       RETURNING id, code, name, home_division_id, role, active`,
-      [name, homeDivisionId, role, active, id]
+       WHERE id = $6
+       RETURNING id, code, name, home_division_id, sub_division_id, role, active`,
+      [name, homeDivisionId, nextSubDivisionId, role, active, id]
     );
     const after = rows[0];
 
@@ -210,6 +216,12 @@ router.post("/bulk", requireAuth, requireRole("hr", "admin"), async (req, res) =
   const divByCode = new Map(divRows.map((d) => [String(d.code).toUpperCase(), d.id]));
   const divById = new Map(divRows.map((d) => [String(d.id), d.id]));
 
+  // Sub-divisions are scoped to a division, so key lookups by "divisionId:CODE"
+  // as well as the bare numeric id.
+  const { rows: subRows } = await pool.query("SELECT id, division_id, code FROM sub_divisions");
+  const subByDivAndCode = new Map(subRows.map((s) => [`${s.division_id}:${String(s.code).toUpperCase()}`, s.id]));
+  const subById = new Map(subRows.map((s) => [String(s.id), s.id]));
+
   const records = [];
   const errors = [];
   await new Promise((resolve, reject) => {
@@ -238,6 +250,7 @@ router.post("/bulk", requireAuth, requireRole("hr", "admin"), async (req, res) =
       const name = (rec.name || "").trim();
       const role = (rec.role || "employee").trim().toLowerCase();
       const divisionIdRaw = (rec.divisionId || rec.division_id || rec.division || "").trim();
+      const subDivisionIdRaw = (rec.subDivisionId || rec.sub_division_id || rec.subDivision || rec.sub_division || "").trim();
       const password = (rec.password || "").trim();
 
       if (!code || !name || !password) {
@@ -253,6 +266,16 @@ router.post("/bulk", requireAuth, requireRole("hr", "admin"), async (req, res) =
         errors.push({ row: lineNo, code, error: `unknown division '${divisionIdRaw}'` });
         continue;
       }
+      let subDivisionId = null;
+      if (subDivisionIdRaw) {
+        subDivisionId = subById.get(String(subDivisionIdRaw))
+          || (divisionId && subByDivAndCode.get(`${divisionId}:${String(subDivisionIdRaw).toUpperCase()}`))
+          || null;
+        if (!subDivisionId) {
+          errors.push({ row: lineNo, code, error: `unknown sub-division '${subDivisionIdRaw}' for division '${divisionIdRaw}'` });
+          continue;
+        }
+      }
       if (existingCodes.has(code)) {
         skipped.push({ row: lineNo, code, reason: "code already exists" });
         continue;
@@ -261,10 +284,10 @@ router.post("/bulk", requireAuth, requireRole("hr", "admin"), async (req, res) =
       try {
         const passwordHash = await bcrypt.hash(password, 10);
         const { rows } = await client.query(
-          `INSERT INTO employees (code, name, home_division_id, role, password_hash)
-           VALUES ($1,$2,$3,$4,$5)
-           RETURNING id, code, name, home_division_id, role, active`,
-          [code, name, divisionId, role, passwordHash]
+          `INSERT INTO employees (code, name, home_division_id, sub_division_id, role, password_hash)
+           VALUES ($1,$2,$3,$4,$5,$6)
+           RETURNING id, code, name, home_division_id, sub_division_id, role, active`,
+          [code, name, divisionId, subDivisionId, role, passwordHash]
         );
         existingCodes.add(code);
         created.push(rows[0]);

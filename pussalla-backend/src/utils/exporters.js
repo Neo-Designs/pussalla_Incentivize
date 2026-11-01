@@ -180,7 +180,7 @@ function sendPayslipPdf(res, data) {
       doc.text(`${Number(it.output).toFixed(1)} ${it.unit || ""}`, colX.units, yy, { width: colUnits, align: "right" });
       doc.text(String(it.count || 1), colX.count, yy, { width: colCount, align: "right" });
       doc.text(`Rs. ${Number(it.rate).toFixed(2)}`, colX.rate, yy, { width: colRate, align: "right" });
-      const isGroup = it.taskType === 2 || it.taskType === 3;
+      const isGroup = it.taskType === 2 || it.taskType === 3 || it.taskType === 4;
       doc.text(isGroup ? `${it.participantCount || 1} worker(s)` : "—", colX.split, yy, { width: colSplit, align: "center" });
       doc.text(it.taskType === 3 && it.baseLimit != null ? `${it.baseLimit} ${it.unit || ""}` : "—", colX.limit, yy, { width: colLimit, align: "right" });
       doc.fillColor(headColor).text(`Rs. ${Number(it.amount).toFixed(2)}`, colX.earn, yy, { width: colEarn, align: "right" });

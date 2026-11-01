@@ -185,7 +185,7 @@ export default function PayslipView({ grid, loading, onClose, onDownloadPdf, pdf
               </thead>
               <tbody>
                 {items.map((it, i) => {
-                  const isGroup = it.taskType === 2 || it.taskType === 3;
+                  const isGroup = it.taskType === 2 || it.taskType === 3 || it.taskType === 4;
                   return (
                     <tr key={`${it.date}-${it.task}-${i}`} className={i % 2 ? "row-alt" : ""}>
                       <td className="col-date">{formatDate(it.date)}</td>

@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const { Pool } = require("pg");
 require("dotenv").config();
 
@@ -20,6 +22,9 @@ pool.on("error", (err) => {
 async function ensureSchema() {
   try {
     await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS code VARCHAR(50) UNIQUE;`);
+    // Sub-divisions + Type 4 tasks (idempotent; see migrations/002_subdivisions_fixed_rate.sql)
+    const migration002 = fs.readFileSync(path.join(__dirname, "migrations", "002_subdivisions_fixed_rate.sql"), "utf8");
+    await pool.query(migration002);
     const { rows: nullTasks } = await pool.query(
       `SELECT id FROM tasks WHERE code IS NULL OR code = '' ORDER BY id`
     );

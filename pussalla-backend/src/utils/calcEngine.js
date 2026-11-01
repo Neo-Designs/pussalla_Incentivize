@@ -1,5 +1,5 @@
 /**
- * Three task calculation engines used across the system.
+ * Four task calculation engines used across the system.
  * `task` must contain: task_type (1|2|3), rate, base_limit (type 3 only)
  */
 function calcEngine(task, totalOutput, workerCount) {
@@ -20,6 +20,13 @@ function calcEngine(task, totalOutput, workerCount) {
     const excess = Math.max(0, output - Number(task.base_limit));
     const total = excess * rate;
     return { total, perWorker: workerCount > 0 ? total / workerCount : 0 };
+  }
+
+  if (task.task_type === 4) {
+    // Fixed daily rate per person: every checked-off worker earns `rate`.
+    // `totalOutput` is ignored; the headcount drives the total.
+    const perWorker = workerCount > 0 ? rate : 0;
+    return { total: perWorker * workerCount, perWorker };
   }
 
   throw new Error(`Unknown task_type: ${task.task_type}`);

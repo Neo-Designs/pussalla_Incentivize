@@ -41,13 +41,14 @@ CREATE INDEX idx_employees_role ON employees(role);
 --   task_type 1 = Individual Flat Rate      -> output * rate
 --   task_type 2 = Group Flat Rate Pool      -> (total_output * rate) / checked_off_workers
 --   task_type 3 = Group Daily Limit/Tiered  -> max(0, total_output - base_limit) * rate / checked_off_workers
+--   task_type 4 = Fixed Daily Rate / Person -> rate paid to every checked-off worker (total = rate * workers)
 -- ---------------------------------------------------------
 CREATE TABLE tasks (
   id           SERIAL PRIMARY KEY,
   code         VARCHAR(50) UNIQUE,
   division_id  INTEGER NOT NULL REFERENCES divisions(id) ON DELETE CASCADE,
   name         VARCHAR(150) NOT NULL,
-  task_type    SMALLINT NOT NULL CHECK (task_type IN (1, 2, 3)),
+  task_type    SMALLINT NOT NULL CHECK (task_type IN (1, 2, 3, 4)),
   rate         NUMERIC(12,2) NOT NULL CHECK (rate >= 0),
   base_limit   NUMERIC(12,2) CHECK (base_limit IS NULL OR base_limit >= 0),
   unit         VARCHAR(30) NOT NULL,
@@ -170,3 +171,27 @@ CREATE INDEX IF NOT EXISTS idx_task_participants_emp_log ON task_participants(em
 CREATE INDEX IF NOT EXISTS idx_task_participants_log_emp ON task_participants(daily_task_log_id, employee_id);
 CREATE INDEX IF NOT EXISTS idx_audit_flagged_created     ON audit_logs(created_at) WHERE flagged = true;
 CREATE INDEX IF NOT EXISTS idx_daily_logs_date_task      ON daily_task_logs(log_date, task_id);
+
+-- ---------------------------------------------------------
+-- Sub-divisions (sections within a division, e.g. Ganewaththa's
+-- "Birds Unloading", "Cold Storage - Loading", "Cutup & MDM", etc).
+-- Optional one level of hierarchy: division -> sub-division -> employee/task.
+-- ---------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sub_divisions (
+  id           SERIAL PRIMARY KEY,
+  division_id  INTEGER NOT NULL REFERENCES divisions(id) ON DELETE CASCADE,
+  code         VARCHAR(30) NOT NULL,
+  name         VARCHAR(120) NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (division_id, code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sub_divisions_division ON sub_divisions(division_id);
+
+ALTER TABLE employees       ADD COLUMN IF NOT EXISTS sub_division_id INTEGER REFERENCES sub_divisions(id) ON DELETE SET NULL;
+ALTER TABLE tasks           ADD COLUMN IF NOT EXISTS sub_division_id INTEGER REFERENCES sub_divisions(id) ON DELETE SET NULL;
+ALTER TABLE daily_task_logs ADD COLUMN IF NOT EXISTS sub_division_id INTEGER REFERENCES sub_divisions(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_employees_sub_division  ON employees(sub_division_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_sub_division      ON tasks(sub_division_id);
+CREATE INDEX IF NOT EXISTS idx_daily_logs_sub_division ON daily_task_logs(sub_division_id);
