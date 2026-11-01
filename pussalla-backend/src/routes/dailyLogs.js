@@ -7,14 +7,15 @@ const { parsePagination } = require("../utils/pagination");
 
 const router = express.Router();
 
-// GET /api/daily-logs?date=2026-08-11&divisionId=1&page=1&limit=50
+// GET /api/daily-logs?date=2026-08-11&divisionId=1&subDivisionId=2&page=1&limit=50
 router.get("/", requireAuth, async (req, res) => {
   const { page, limit, offset } = parsePagination(req);
-  const { date, divisionId } = req.query;
+  const { date, divisionId, subDivisionId } = req.query;
   const clauses = [];
   const params = [];
   if (date) { params.push(date); clauses.push(`l.log_date = $${params.length}`); }
   if (divisionId) { params.push(divisionId); clauses.push(`l.division_id = $${params.length}`); }
+  if (subDivisionId) { params.push(subDivisionId); clauses.push(`l.sub_division_id = $${params.length}`); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
   const baseSelect = `FROM daily_task_logs l
@@ -71,9 +72,9 @@ router.post("/", requireAuth, requireRole("supervisor"), async (req, res) => {
         const { total } = calcEngine(task, en.output, 1);
         const { rows } = await client.query(
           `INSERT INTO daily_task_logs
-            (log_date, division_id, task_id, total_output, rate_snapshot, base_limit_snapshot, amount, entered_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-          [date, divisionId, taskId, en.output, task.rate, task.base_limit, total, req.user.id]
+            (log_date, division_id, sub_division_id, task_id, total_output, rate_snapshot, base_limit_snapshot, amount, entered_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+          [date, divisionId, task.sub_division_id, taskId, en.output, task.rate, task.base_limit, total, req.user.id]
         );
         const log = rows[0];
         await client.query(
@@ -94,9 +95,9 @@ router.post("/", requireAuth, requireRole("supervisor"), async (req, res) => {
       const { total, perWorker } = calcEngine(task, totalOutput, participantIds.length);
       const { rows } = await client.query(
         `INSERT INTO daily_task_logs
-          (log_date, division_id, task_id, total_output, rate_snapshot, base_limit_snapshot, amount, entered_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [date, divisionId, taskId, totalOutput, task.rate, task.base_limit, total, req.user.id]
+          (log_date, division_id, sub_division_id, task_id, total_output, rate_snapshot, base_limit_snapshot, amount, entered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [date, divisionId, task.sub_division_id, taskId, totalOutput, task.rate, task.base_limit, total, req.user.id]
       );
       const log = rows[0];
       for (const empId of participantIds) {

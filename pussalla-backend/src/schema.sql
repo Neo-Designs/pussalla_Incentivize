@@ -169,3 +169,27 @@ CREATE INDEX IF NOT EXISTS idx_task_participants_emp_log ON task_participants(em
 CREATE INDEX IF NOT EXISTS idx_task_participants_log_emp ON task_participants(daily_task_log_id, employee_id);
 CREATE INDEX IF NOT EXISTS idx_audit_flagged_created     ON audit_logs(created_at) WHERE flagged = true;
 CREATE INDEX IF NOT EXISTS idx_daily_logs_date_task      ON daily_task_logs(log_date, task_id);
+
+-- ---------------------------------------------------------
+-- Sub-divisions (sections within a division, e.g. Ganewaththa's
+-- "Birds Unloading", "Cold Storage - Loading", "Cutup & MDM", etc).
+-- Optional one level of hierarchy: division -> sub-division -> employee/task.
+-- ---------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sub_divisions (
+  id           SERIAL PRIMARY KEY,
+  division_id  INTEGER NOT NULL REFERENCES divisions(id) ON DELETE CASCADE,
+  code         VARCHAR(30) NOT NULL,
+  name         VARCHAR(120) NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (division_id, code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sub_divisions_division ON sub_divisions(division_id);
+
+ALTER TABLE employees       ADD COLUMN IF NOT EXISTS sub_division_id INTEGER REFERENCES sub_divisions(id) ON DELETE SET NULL;
+ALTER TABLE tasks           ADD COLUMN IF NOT EXISTS sub_division_id INTEGER REFERENCES sub_divisions(id) ON DELETE SET NULL;
+ALTER TABLE daily_task_logs ADD COLUMN IF NOT EXISTS sub_division_id INTEGER REFERENCES sub_divisions(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_employees_sub_division  ON employees(sub_division_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_sub_division      ON tasks(sub_division_id);
+CREATE INDEX IF NOT EXISTS idx_daily_logs_sub_division ON daily_task_logs(sub_division_id);

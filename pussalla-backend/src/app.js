@@ -8,6 +8,7 @@ require("dotenv").config();
 
 const authRoutes = require("./routes/auth");
 const divisionRoutes = require("./routes/divisions");
+const subDivisionRoutes = require("./routes/subDivisions");
 const employeeRoutes = require("./routes/employees");
 const taskRoutes = require("./routes/tasks");
 const crossAssignmentRoutes = require("./routes/crossAssignments");
@@ -48,6 +49,7 @@ app.get("/api/health", (req, res) => res.json({ ok: true, service: "incentivize-
 app.use("/api/auth/login", loginLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/divisions", divisionRoutes);
+app.use("/api/sub-divisions", subDivisionRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/cross-assignments", crossAssignmentRoutes);

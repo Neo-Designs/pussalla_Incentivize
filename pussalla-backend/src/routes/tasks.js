@@ -6,13 +6,14 @@ const { parsePagination } = require("../utils/pagination");
 
 const router = express.Router();
 
-// GET /api/tasks?divisionId=1&page=1&limit=50&active=true
+// GET /api/tasks?divisionId=1&subDivisionId=2&page=1&limit=50&active=true
 router.get("/", requireAuth, async (req, res) => {
   const { page, limit, offset } = parsePagination(req);
-  const { divisionId, active } = req.query;
+  const { divisionId, subDivisionId, active } = req.query;
   const clauses = [];
   const params = [];
   if (divisionId) { params.push(divisionId); clauses.push(`division_id = $${params.length}`); }
+  if (subDivisionId) { params.push(subDivisionId); clauses.push(`sub_division_id = $${params.length}`); }
   if (active === "true" || active === undefined) clauses.push(`active = true`);
   if (active === "false") clauses.push(`active = false`);
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
@@ -28,7 +29,7 @@ router.get("/", requireAuth, async (req, res) => {
 });
 
 router.post("/", requireAuth, requireRole("admin"), async (req, res) => {
-  const { divisionId, name, taskType, rate, baseLimit, unit } = req.body;
+  const { divisionId, subDivisionId, name, taskType, rate, baseLimit, unit } = req.body;
   if (!divisionId || !name || !taskType || rate == null || !unit) {
     return res.status(400).json({ error: "divisionId, name, taskType, rate and unit are required" });
   }
@@ -39,9 +40,9 @@ router.post("/", requireAuth, requireRole("admin"), async (req, res) => {
   try {
     await client.query("BEGIN");
     const { rows } = await client.query(
-      `INSERT INTO tasks (division_id, name, task_type, rate, base_limit, unit)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [divisionId, name, taskType, rate, taskType == 3 ? baseLimit : null, unit]
+      `INSERT INTO tasks (division_id, sub_division_id, name, task_type, rate, base_limit, unit)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [divisionId, subDivisionId || null, name, taskType, rate, taskType == 3 ? baseLimit : null, unit]
     );
     const task = rows[0];
     await writeAudit(client, {
@@ -61,12 +62,14 @@ router.post("/", requireAuth, requireRole("admin"), async (req, res) => {
 
 router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
   const { id } = req.params;
-  const { name, taskType, rate, baseLimit, unit } = req.body;
+  const { name, taskType, rate, baseLimit, unit, subDivisionId } = req.body;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const { rows: before } = await client.query("SELECT * FROM tasks WHERE id=$1", [id]);
     if (!before[0]) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Not found" }); }
+
+    const nextSubDivisionId = subDivisionId === "" ? null : (subDivisionId ?? before[0].sub_division_id);
 
     const { rows } = await client.query(
       `UPDATE tasks SET
@@ -75,9 +78,10 @@ router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
          rate = COALESCE($3, rate),
          base_limit = $4,
          unit = COALESCE($5, unit),
+         sub_division_id = $6,
          updated_at = now()
-       WHERE id = $6 RETURNING *`,
-      [name, taskType, rate, baseLimit ?? before[0].base_limit, unit, id]
+       WHERE id = $7 RETURNING *`,
+      [name, taskType, rate, baseLimit ?? before[0].base_limit, unit, nextSubDivisionId, id]
     );
     const after = rows[0];
     await writeAudit(client, {

@@ -35,14 +35,15 @@ function monthDayKeys(month) {
   return out;
 }
 
-// GET /api/reports/daily?date=2026-08-06&divisionId=2
+// GET /api/reports/daily?date=2026-08-06&divisionId=2&subDivisionId=3
 router.get("/daily", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
-  const { date, divisionId } = req.query;
+  const { date, divisionId, subDivisionId } = req.query;
   if (!date) return res.status(400).json({ error: "date query param is required (YYYY-MM-DD)" });
 
   const clauses = ["l.log_date = $1"];
   const params = [date];
   if (divisionId) { params.push(divisionId); clauses.push(`l.division_id = $${params.length}`); }
+  if (subDivisionId) { params.push(subDivisionId); clauses.push(`l.sub_division_id = $${params.length}`); }
   const where = `WHERE ${clauses.join(" AND ")}`;
 
   const { rows } = await pool.query(
@@ -85,14 +86,15 @@ router.get("/daily.csv", requireAuth, requireRole(...ALLOWED_ROLES), async (req,
   sendCsv(res, `incentivize-daily-${date}.csv`, out);
 });
 
-// GET /api/reports/monthly?month=2026-08&divisionId=2  (server-side aggregation)
+// GET /api/reports/monthly?month=2026-08&divisionId=2&subDivisionId=3  (server-side aggregation)
 router.get("/monthly", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
-  const { month, divisionId } = req.query;
+  const { month, divisionId, subDivisionId } = req.query;
   if (!month) return res.status(400).json({ error: "month query param is required (YYYY-MM)" });
 
   const clauses = ["to_char(l.log_date, 'YYYY-MM') = $1"];
   const params = [month];
   if (divisionId) { params.push(divisionId); clauses.push(`l.division_id = $${params.length}`); }
+  if (subDivisionId) { params.push(subDivisionId); clauses.push(`l.sub_division_id = $${params.length}`); }
   const where = `WHERE ${clauses.join(" AND ")}`;
 
   // Per-employee totals + days worked, in one grouped query.
@@ -247,7 +249,7 @@ router.get("/employee-grid/:employeeId", requireAuth, requireRole(...ALLOWED_ROL
 // is meant to be rowspan-merged across the employee's task rows on the
 // client. Used by the all-employee work-breakdown grid on the Reports page.
 router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
-  const { month, divisionId } = req.query;
+  const { month, divisionId, subDivisionId } = req.query;
   if (!month) return res.status(400).json({ error: "month query param is required (YYYY-MM)" });
 
   const dates = monthDayKeys(month); // ["01" .. "<lastDay>"]
@@ -255,6 +257,7 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
   const clauses = ["to_char(l.log_date, 'YYYY-MM') = $1"];
   const params = [month];
   if (divisionId) { params.push(divisionId); clauses.push(`l.division_id = $${params.length}`); }
+  if (subDivisionId) { params.push(subDivisionId); clauses.push(`l.sub_division_id = $${params.length}`); }
   const where = clauses.join(" AND ");
 
   const { rows } = await pool.query(
@@ -277,6 +280,7 @@ router.get("/all-employee-grid", requireAuth, requireRole(...ALLOWED_ROLES), asy
   const empParams = [];
   const empClauses = [];
   if (divisionId) { empParams.push(divisionId); empClauses.push(`home_division_id = $${empParams.length}`); }
+  if (subDivisionId) { empParams.push(subDivisionId); empClauses.push(`sub_division_id = $${empParams.length}`); }
   const empWhere = empClauses.length ? `WHERE ${empClauses.join(" AND ")}` : "";
   const { rows: allEmps } = await pool.query(
     `SELECT e.id, e.code, e.name, d.name AS division_name
@@ -461,12 +465,13 @@ router.get("/my-earnings", requireAuth, async (req, res) => {
 
 // GET /api/reports/analytics?from=&to=&divisionId=  (super_admin, admin)
 router.get("/analytics", requireAuth, requireRole("admin", "super_admin"), async (req, res) => {
-  const { from, to, divisionId } = req.query;
+  const { from, to, divisionId, subDivisionId } = req.query;
   const dateClause = [];
   const dp = [];
   if (from) { dp.push(from); dateClause.push(`l.log_date >= $${dp.length}`); }
   if (to) { dp.push(to); dateClause.push(`l.log_date <= $${dp.length}`); }
   if (divisionId) { dp.push(divisionId); dateClause.push(`l.division_id = $${dp.length}`); }
+  if (subDivisionId) { dp.push(subDivisionId); dateClause.push(`l.sub_division_id = $${dp.length}`); }
   const where = dateClause.length ? `WHERE ${dateClause.join(" AND ")}` : "";
 
   // For audit/edits trend the date predicate is applied to created_at.

@@ -4,7 +4,7 @@ import Card, { PageHead, KPI, EmptyState, SkeletonRows } from "../components/Car
 import Reveal from "../components/Reveal.jsx";
 import CellTooltip from "../components/CellTooltip.jsx";
 import PayslipView from "../components/PayslipView.jsx";
-import { reportsApi, divisionsApi, downloadBlob } from "../api/client";
+import { reportsApi, divisionsApi, subDivisionsApi, downloadBlob } from "../api/client";
 import { formatMoney, formatNumber, formatDate, taskTypeLabel, todayISO, currentMonthISO } from "../utils/helpers";
 
 // Rich hover tooltip for a single task×date cell: units done, the incentive
@@ -50,6 +50,8 @@ export default function ReportsPage() {
   const [monthly, setMonthly] = useState(null);
   const [divisions, setDivisions] = useState([]);
   const [divisionFilter, setDivisionFilter] = useState("");
+  const [subDivisions, setSubDivisions] = useState([]);
+  const [subDivisionFilter, setSubDivisionFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [payslipLoading, setPayslipLoading] = useState(null);
   const [gridEmp, setGridEmp] = useState(null);
@@ -58,6 +60,8 @@ export default function ReportsPage() {
   const [allGrid, setAllGrid] = useState(null);
   const [allGridLoading, setAllGridLoading] = useState(false);
   const [breakdownDivision, setBreakdownDivision] = useState("");
+  const [breakdownSubDivisions, setBreakdownSubDivisions] = useState([]);
+  const [breakdownSubDivision, setBreakdownSubDivision] = useState("");
 
   const isSupervisor = user.role === "supervisor";
 
@@ -73,16 +77,30 @@ export default function ReportsPage() {
     divisionsApi.list().then(setDivisions).catch(() => setDivisions([]));
   }, []);
 
+  // Sub-division options depend on the chosen division; reset the sub-filter
+  // whenever the division filter changes to avoid a stale, mismatched value.
+  useEffect(() => {
+    setSubDivisionFilter("");
+    if (!divisionFilter) { setSubDivisions([]); return; }
+    subDivisionsApi.list(divisionFilter).then(setSubDivisions).catch(() => setSubDivisions([]));
+  }, [divisionFilter]);
+
+  useEffect(() => {
+    setBreakdownSubDivision("");
+    if (!breakdownDivision) { setBreakdownSubDivisions([]); return; }
+    subDivisionsApi.list(breakdownDivision).then(setBreakdownSubDivisions).catch(() => setBreakdownSubDivisions([]));
+  }, [breakdownDivision]);
+
   useEffect(() => {
     let active = true;
     setLoading(true);
     (async () => {
       try {
         if (tab === "daily") {
-          const r = await reportsApi.daily(day, divisionFilter || undefined);
+          const r = await reportsApi.daily(day, divisionFilter || undefined, subDivisionFilter || undefined);
           if (active) { setDaily(r); setMonthly(null); }
         } else {
-          const r = await reportsApi.monthly(month, divisionFilter || undefined);
+          const r = await reportsApi.monthly(month, divisionFilter || undefined, subDivisionFilter || undefined);
           if (active) { setMonthly(r); setDaily(null); }
         }
       } catch {
@@ -92,7 +110,7 @@ export default function ReportsPage() {
       }
     })();
     return () => { active = false; };
-  }, [tab, month, day, divisionFilter]);
+  }, [tab, month, day, divisionFilter, subDivisionFilter]);
 
   // All-employee work-breakdown grid (task x date for every employee).
   useEffect(() => {
@@ -101,7 +119,7 @@ export default function ReportsPage() {
     setAllGridLoading(true);
     (async () => {
       try {
-        const r = await reportsApi.allEmployeeGrid(month, breakdownDivision || undefined);
+        const r = await reportsApi.allEmployeeGrid(month, breakdownDivision || undefined, breakdownSubDivision || undefined);
         if (active) setAllGrid(r);
       } catch {
         if (active) setAllGrid(null);
@@ -110,7 +128,7 @@ export default function ReportsPage() {
       }
     })();
     return () => { active = false; };
-  }, [tab, month, breakdownDivision]);
+  }, [tab, month, breakdownDivision, breakdownSubDivision]);
 
   const exportDailyCsv = async () => {
     const blob = await reportsApi.exportDailyCsv(day);
@@ -171,6 +189,12 @@ export default function ReportsPage() {
               <option value="">{isSupervisor ? "My division" : "All divisions"}</option>
               {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
+            {divisionFilter && (
+              <select value={subDivisionFilter} onChange={(e) => setSubDivisionFilter(e.target.value)} style={{ width: "auto" }}>
+                <option value="">All sub-divisions</option>
+                {subDivisions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            )}
             {tab === "daily" ? (
               <button className="btn btn-gold btn-sm" onClick={exportDailyCsv} disabled={loading}>↓ Export CSV</button>
             ) : (
@@ -322,6 +346,12 @@ export default function ReportsPage() {
                   <option value="">All divisions</option>
                   {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
+                {breakdownDivision && (
+                  <select value={breakdownSubDivision} onChange={(e) => setBreakdownSubDivision(e.target.value)} style={{ width: "auto" }}>
+                    <option value="">All sub-divisions</option>
+                    {breakdownSubDivisions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                )}
               </div>
               <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0, marginBottom: "0.6rem" }}>
                 Every employee is listed with their tasks as rows and dates (1–{(allGrid?.dates?.length) || 0}) as columns.

@@ -4,20 +4,21 @@ import { useToast } from "../context/ToastContext";
 import Card, { PageHead, KPI, EmptyState, Badge, SkeletonRows } from "../components/Card.jsx";
 import Modal, { ConfirmDialog } from "../components/Modal.jsx";
 import { MiniSpinner } from "../components/Loaders.jsx";
-import { employeesApi, divisionsApi } from "../api/client";
+import { employeesApi, divisionsApi, subDivisionsApi } from "../api/client";
 import { formatMoney, roleLabel, initials, hasRole } from "../utils/helpers";
 
 const ROLES = ["employee", "supervisor", "hr", "admin", "super_admin"];
 
-const CSV_TEMPLATE = `code,name,role,divisionId,password
-EMP-031,Sample Employee,employee,1,TempPass123
-EMP-032,Sample Supervisor,supervisor,PPA,TempPass123
+const CSV_TEMPLATE = `code,name,role,divisionId,subDivisionId,password
+EMP-031,Sample Employee,employee,1,,TempPass123
+EMP-032,Sample Supervisor,supervisor,PPA,,TempPass123
 `;
 
 export default function EmployeesPage() {
   const { user } = useAuth();
   const toast = useToast();
   const [divisions, setDivisions] = useState([]);
+  const [subDivisions, setSubDivisions] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -26,15 +27,18 @@ export default function EmployeesPage() {
   const [editTarget, setEditTarget] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [subDivModalOpen, setSubDivModalOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [divs, rows] = await Promise.all([
+      const [divs, subs, rows] = await Promise.all([
         divisionsApi.list().catch(() => []),
-        employeesApi.list().catch(() => []),
+        subDivisionsApi.list().catch(() => []),
+        employeesApi.list({ limit: 1000 }).catch(() => []),
       ]);
       setDivisions(divs);
+      setSubDivisions(subs);
       setEmployees(rows);
     } finally {
       setLoading(false);
@@ -44,6 +48,7 @@ export default function EmployeesPage() {
   useEffect(() => { load(); }, []);
 
   const divName = (id) => divisions.find((d) => d.id === id)?.name || "—";
+  const subDivName = (id) => subDivisions.find((s) => s.id === id)?.name || null;
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -61,6 +66,9 @@ export default function EmployeesPage() {
         subtitle="Manage staff records, roles and home division. All changes are audit-logged."
         actions={
           <>
+            {hasRole(user, "hr") && (
+              <button className="btn btn-ghost" onClick={() => setSubDivModalOpen(true)}>⚙ Sub-divisions</button>
+            )}
             {hasRole(user, "hr") && (
               <button className="btn btn-ghost" onClick={() => setImportOpen(true)}>↓ Bulk import (CSV)</button>
             )}
@@ -100,7 +108,7 @@ export default function EmployeesPage() {
         ) : (
           <table className="data">
             <thead>
-              <tr><th>Employee</th><th>Code</th><th>Role</th><th>Home Division</th><th>Status</th><th>Actions</th></tr>
+              <tr><th>Employee</th><th>Code</th><th>Role</th><th>Home Division</th><th>Sub-division</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {filtered.map((emp) => (
@@ -114,6 +122,7 @@ export default function EmployeesPage() {
                   <td className="mono">{emp.code}</td>
                   <td><Badge tone={emp.role === "super_admin" ? "red" : emp.role === "supervisor" ? "green" : emp.role === "hr" ? "blue" : emp.role === "admin" ? "gold" : "grey"}>{roleLabel(emp.role)}</Badge></td>
                   <td>{divName(emp.home_division_id)}</td>
+                  <td>{subDivName(emp.sub_division_id) || "—"}</td>
                   <td>{emp.active === false ? <Badge tone="red">Inactive</Badge> : <Badge tone="green">Active</Badge>}</td>
                   <td>
                     <div className="row" style={{ gap: "0.3rem" }}>
@@ -131,11 +140,15 @@ export default function EmployeesPage() {
       </Card>
 
       {modalOpen && (
-        <EmployeeModal divisions={divisions} editTarget={editTarget} user={user} onSaved={() => { setModalOpen(false); setEditTarget(null); load(); }} onClose={() => { setModalOpen(false); setEditTarget(null); }} />
+        <EmployeeModal divisions={divisions} subDivisions={subDivisions} editTarget={editTarget} user={user} onSaved={() => { setModalOpen(false); setEditTarget(null); load(); }} onClose={() => { setModalOpen(false); setEditTarget(null); }} />
       )}
 
       {importOpen && (
-        <BulkImportModal divisions={divisions} onDone={() => load()} onClose={() => setImportOpen(false)} />
+        <BulkImportModal divisions={divisions} subDivisions={subDivisions} onDone={() => load()} onClose={() => setImportOpen(false)} />
+      )}
+
+      {subDivModalOpen && (
+        <SubDivisionsModal divisions={divisions} subDivisions={subDivisions} onChanged={() => load()} onClose={() => setSubDivModalOpen(false)} />
       )}
 
       {confirmDel && (
@@ -155,18 +168,24 @@ export default function EmployeesPage() {
   );
 }
 
-function EmployeeModal({ divisions, editTarget, user, onSaved, onClose }) {
+function EmployeeModal({ divisions, subDivisions, editTarget, user, onSaved, onClose }) {
   const toast = useToast();
   const isEdit = !!editTarget;
   const isSuperAdmin = hasRole(user, "super_admin");
   const [code, setCode] = useState(editTarget?.code || "");
   const [name, setName] = useState(editTarget?.name || "");
   const [homeDivisionId, setHomeDivisionId] = useState(editTarget?.home_division_id || "");
+  const [subDivisionId, setSubDivisionId] = useState(editTarget?.sub_division_id || "");
   const [role, setRole] = useState(editTarget?.role || "employee");
   const [password, setPassword] = useState("");
   const [resetPassword, setResetPassword] = useState(false);
   const [active, setActive] = useState(editTarget?.active !== false);
   const [saving, setSaving] = useState(false);
+
+  const subDivisionOptions = useMemo(
+    () => (homeDivisionId ? subDivisions.filter((s) => s.division_id === Number(homeDivisionId)) : []),
+    [subDivisions, homeDivisionId]
+  );
 
   const submit = async () => {
     if (isEdit) {
@@ -177,6 +196,7 @@ function EmployeeModal({ divisions, editTarget, user, onSaved, onClose }) {
         await employeesApi.update(editTarget.id, {
           name,
           homeDivisionId: homeDivisionId ? Number(homeDivisionId) : null,
+          subDivisionId: subDivisionId ? Number(subDivisionId) : "",
           role,
           active,
           password: resetPassword && password ? password : undefined,
@@ -189,7 +209,8 @@ function EmployeeModal({ divisions, editTarget, user, onSaved, onClose }) {
       setSaving(true);
       try {
         await employeesApi.create({
-          code, name, homeDivisionId: homeDivisionId ? Number(homeDivisionId) : null, role, password,
+          code, name, homeDivisionId: homeDivisionId ? Number(homeDivisionId) : null,
+          subDivisionId: subDivisionId ? Number(subDivisionId) : null, role, password,
         });
         toast.success("Employee created");
         onSaved();
@@ -219,9 +240,16 @@ function EmployeeModal({ divisions, editTarget, user, onSaved, onClose }) {
         </div>
         <div>
           <label>Home division</label>
-          <select value={homeDivisionId} onChange={(e) => setHomeDivisionId(e.target.value)}>
+          <select value={homeDivisionId} onChange={(e) => { setHomeDivisionId(e.target.value); setSubDivisionId(""); }}>
             <option value="">— None —</option>
             {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label>Sub-division</label>
+          <select value={subDivisionId} onChange={(e) => setSubDivisionId(e.target.value)} disabled={!homeDivisionId}>
+            <option value="">— None —</option>
+            {subDivisionOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
         <div>
@@ -271,7 +299,7 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-function BulkImportModal({ divisions, onDone, onClose }) {
+function BulkImportModal({ divisions, subDivisions, onDone, onClose }) {
   const toast = useToast();
   const [csvText, setCsvText] = useState("");
   const [result, setResult] = useState(null);
@@ -313,7 +341,7 @@ function BulkImportModal({ divisions, onDone, onClose }) {
       <div style={{ marginBottom: "0.8rem" }}>
         <button className="btn btn-ghost btn-sm" onClick={downloadTemplate}>↓ Download CSV template</button>
         <span className="muted" style={{ fontSize: "0.82rem", marginLeft: "0.6rem" }}>
-          Columns: code, name, role, divisionId, password
+          Columns: code, name, role, divisionId, subDivisionId (optional), password
         </span>
       </div>
       <div style={{ marginBottom: "0.6rem" }}>
@@ -334,6 +362,11 @@ function BulkImportModal({ divisions, onDone, onClose }) {
         Valid division IDs/codes: {divisions.map((d) => `${d.id} (${d.code})`).join(", ")}.
         Valid roles: employee, supervisor, hr, admin.
       </p>
+      {subDivisions.length > 0 && (
+        <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.2rem" }}>
+          Valid sub-division IDs/codes: {subDivisions.map((s) => `${s.id} (${s.code})`).join(", ")}.
+        </p>
+      )}
 
       {result && (
         <div style={{ marginTop: "0.8rem" }}>
@@ -359,6 +392,123 @@ function BulkImportModal({ divisions, onDone, onClose }) {
             </details>
           )}
         </div>
+      )}
+    </Modal>
+  );
+}
+
+// Manage the sub-divisions (sections) within a division — e.g. Ganewaththa's
+// Birds Unloading, Cold Storage - Loading, Cutup & MDM, etc. Kept lightweight:
+// pick a division, then add/rename/delete its sections.
+function SubDivisionsModal({ divisions, subDivisions, onChanged, onClose }) {
+  const toast = useToast();
+  const [divisionId, setDivisionId] = useState(divisions[0]?.id || "");
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [editing, setEditing] = useState(null); // sub-division being renamed
+  const [editName, setEditName] = useState("");
+
+  const scoped = subDivisions.filter((s) => s.division_id === Number(divisionId));
+
+  const add = async () => {
+    if (!divisionId || !code.trim() || !name.trim()) { toast.error("Division, code and name are required"); return; }
+    setSaving(true);
+    try {
+      await subDivisionsApi.create({ divisionId: Number(divisionId), code: code.trim(), name: name.trim() });
+      toast.success("Sub-division added");
+      setCode(""); setName("");
+      onChanged();
+    } catch (e) { toast.error(e.message); } finally { setSaving(false); }
+  };
+
+  const rename = async (sub) => {
+    if (!editName.trim()) { toast.error("Name is required"); return; }
+    try {
+      await subDivisionsApi.update(sub.id, { name: editName.trim() });
+      toast.success("Sub-division renamed");
+      setEditing(null);
+      onChanged();
+    } catch (e) { toast.error(e.message); }
+  };
+
+  const remove = async (sub) => {
+    try {
+      await subDivisionsApi.remove(sub.id);
+      toast.success("Sub-division deleted");
+      setConfirmDel(null);
+      onChanged();
+    } catch (e) { toast.error(e.message); }
+  };
+
+  return (
+    <Modal title="Manage sub-divisions" onClose={onClose} footer={<button className="btn btn-ghost" onClick={onClose}>Close</button>}>
+      <div>
+        <label>Division</label>
+        <select value={divisionId} onChange={(e) => setDivisionId(e.target.value)}>
+          {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+      </div>
+
+      <div style={{ marginTop: "0.8rem" }}>
+        {scoped.length === 0 ? (
+          <p className="muted" style={{ fontSize: "0.85rem" }}>No sub-divisions yet for this division.</p>
+        ) : (
+          <table className="data">
+            <thead><tr><th>Code</th><th>Name</th><th>Actions</th></tr></thead>
+            <tbody>
+              {scoped.map((s) => (
+                <tr key={s.id}>
+                  <td className="mono">{s.code}</td>
+                  <td>
+                    {editing === s.id ? (
+                      <input value={editName} onChange={(e) => setEditName(e.target.value)} style={{ fontSize: "0.85rem" }} />
+                    ) : s.name}
+                  </td>
+                  <td>
+                    <div className="row" style={{ gap: "0.3rem" }}>
+                      {editing === s.id ? (
+                        <>
+                          <button className="btn btn-sm" onClick={() => rename(s)}>Save</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)}>Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(s.id); setEditName(s.name); }}>Rename</button>
+                          <button className="btn btn-ghost btn-sm" style={{ color: "var(--danger)" }} onClick={() => setConfirmDel(s)}>Delete</button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr auto", gap: "0.5rem", marginTop: "0.9rem", alignItems: "end" }}>
+        <div>
+          <label>New code</label>
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. BIRDS-UNLD" />
+        </div>
+        <div>
+          <label>New name</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Birds Unloading" />
+        </div>
+        <button className="btn btn-sm" onClick={add} disabled={saving}>+ Add</button>
+      </div>
+
+      {confirmDel && (
+        <ConfirmDialog
+          title="Delete sub-division?"
+          message={`Delete "${confirmDel.name}"? Employees and tasks assigned to it will fall back to no sub-division.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => remove(confirmDel)}
+          onClose={() => setConfirmDel(null)}
+        />
       )}
     </Modal>
   );

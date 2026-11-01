@@ -3,15 +3,17 @@ import { useToast } from "../context/ToastContext";
 import Card, { PageHead, KPI, EmptyState, Badge, SkeletonRows } from "../components/Card.jsx";
 import Modal, { ConfirmDialog } from "../components/Modal.jsx";
 import { MiniSpinner } from "../components/Loaders.jsx";
-import { tasksApi, divisionsApi } from "../api/client";
+import { tasksApi, divisionsApi, subDivisionsApi } from "../api/client";
 import { formatMoney, formatNumber, taskTypeLabel, TASK_TYPES } from "../utils/helpers";
 
 export default function TasksPage() {
   const toast = useToast();
   const [divisions, setDivisions] = useState([]);
+  const [subDivisions, setSubDivisions] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterDiv, setFilterDiv] = useState("");
+  const [filterSubDiv, setFilterSubDiv] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
@@ -19,11 +21,13 @@ export default function TasksPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [divs, rows] = await Promise.all([
+      const [divs, subs, rows] = await Promise.all([
         divisionsApi.list().catch(() => []),
+        subDivisionsApi.list().catch(() => []),
         tasksApi.list().catch(() => []),
       ]);
       setDivisions(divs);
+      setSubDivisions(subs);
       setTasks(rows);
     } finally {
       setLoading(false);
@@ -33,10 +37,18 @@ export default function TasksPage() {
   useEffect(() => { load(); }, []);
 
   const divName = (id) => divisions.find((d) => d.id === id)?.name || "—";
+  const subDivName = (id) => subDivisions.find((s) => s.id === id)?.name || null;
 
   const filtered = useMemo(
-    () => (filterDiv ? tasks.filter((t) => t.division_id === Number(filterDiv)) : tasks),
-    [tasks, filterDiv]
+    () => tasks
+      .filter((t) => !filterDiv || t.division_id === Number(filterDiv))
+      .filter((t) => !filterSubDiv || t.sub_division_id === Number(filterSubDiv)),
+    [tasks, filterDiv, filterSubDiv]
+  );
+
+  const subDivisionsForFilter = useMemo(
+    () => (filterDiv ? subDivisions.filter((s) => s.division_id === Number(filterDiv)) : subDivisions),
+    [subDivisions, filterDiv]
   );
 
   const handleSaved = () => { setModalOpen(false); setEditTarget(null); load(); };
@@ -60,9 +72,16 @@ export default function TasksPage() {
         <div className="row">
           <div>
             <label>Filter by division</label>
-            <select value={filterDiv} onChange={(e) => setFilterDiv(e.target.value)} style={{ width: "auto" }}>
+            <select value={filterDiv} onChange={(e) => { setFilterDiv(e.target.value); setFilterSubDiv(""); }} style={{ width: "auto" }}>
               <option value="">All divisions</option>
               {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label>Sub-division</label>
+            <select value={filterSubDiv} onChange={(e) => setFilterSubDiv(e.target.value)} style={{ width: "auto" }}>
+              <option value="">All sub-divisions</option>
+              {subDivisionsForFilter.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
         </div>
@@ -76,13 +95,14 @@ export default function TasksPage() {
         ) : (
           <table className="data">
             <thead>
-              <tr><th>Task</th><th>Division</th><th>Type</th><th>Rate</th><th>Base Limit</th><th>Unit</th><th>Actions</th></tr>
+              <tr><th>Task</th><th>Division</th><th>Sub-division</th><th>Type</th><th>Rate</th><th>Base Limit</th><th>Unit</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {filtered.map((t) => (
                 <tr key={t.id}>
                   <td><strong>{t.name}</strong></td>
                   <td>{divName(t.division_id)}</td>
+                  <td>{subDivName(t.sub_division_id) || "—"}</td>
                   <td>
                     <Badge tone={t.task_type === 1 ? "green" : t.task_type === 2 ? "gold" : "blue"}>
                       {taskTypeLabel(t.task_type)}
@@ -105,7 +125,7 @@ export default function TasksPage() {
       </Card>
 
       {modalOpen && (
-        <TaskModal divisions={divisions} editTarget={editTarget} onSaved={handleSaved} onClose={() => { setModalOpen(false); setEditTarget(null); }} />
+        <TaskModal divisions={divisions} subDivisions={subDivisions} editTarget={editTarget} onSaved={handleSaved} onClose={() => { setModalOpen(false); setEditTarget(null); }} />
       )}
 
       {confirmDel && (
@@ -125,16 +145,22 @@ export default function TasksPage() {
   );
 }
 
-function TaskModal({ divisions, editTarget, onSaved, onClose }) {
+function TaskModal({ divisions, subDivisions, editTarget, onSaved, onClose }) {
   const toast = useToast();
   const isEdit = !!editTarget;
   const [name, setName] = useState(editTarget?.name || "");
   const [divisionId, setDivisionId] = useState(editTarget?.division_id || "");
+  const [subDivisionId, setSubDivisionId] = useState(editTarget?.sub_division_id || "");
   const [taskType, setTaskType] = useState(editTarget?.task_type || 1);
   const [rate, setRate] = useState(editTarget?.rate ?? "");
   const [baseLimit, setBaseLimit] = useState(editTarget?.base_limit ?? "");
   const [unit, setUnit] = useState(editTarget?.unit || "");
   const [saving, setSaving] = useState(false);
+
+  const subDivisionOptions = useMemo(
+    () => (divisionId ? subDivisions.filter((s) => s.division_id === Number(divisionId)) : []),
+    [subDivisions, divisionId]
+  );
 
   const submit = async () => {
     if (!name || !divisionId || !taskType || rate === "" || !unit) { toast.error("All fields except base limit are required"); return; }
@@ -142,7 +168,7 @@ function TaskModal({ divisions, editTarget, onSaved, onClose }) {
     setSaving(true);
     try {
       const payload = {
-        divisionId: Number(divisionId), name, taskType: Number(taskType),
+        divisionId: Number(divisionId), subDivisionId: subDivisionId ? Number(subDivisionId) : null, name, taskType: Number(taskType),
         rate: Number(rate), baseLimit: Number(taskType) === 3 ? Number(baseLimit) : null, unit,
       };
       if (isEdit) {
@@ -174,9 +200,16 @@ function TaskModal({ divisions, editTarget, onSaved, onClose }) {
         </div>
         <div>
           <label>Division</label>
-          <select value={divisionId} onChange={(e) => setDivisionId(e.target.value)}>
+          <select value={divisionId} onChange={(e) => { setDivisionId(e.target.value); setSubDivisionId(""); }}>
             <option value="">Select…</option>
             {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label>Sub-division (optional)</label>
+          <select value={subDivisionId} onChange={(e) => setSubDivisionId(e.target.value)} disabled={!divisionId}>
+            <option value="">— None (division-wide) —</option>
+            {subDivisionOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
         <div>

@@ -4,7 +4,7 @@ import { useToast } from "../context/ToastContext";
 import Card, { PageHead, KPI, EmptyState, Badge, SkeletonRows } from "../components/Card.jsx";
 import Modal, { ConfirmDialog } from "../components/Modal.jsx";
 import { MiniSpinner } from "../components/Loaders.jsx";
-import { dailyLogsApi, tasksApi, employeesApi, divisionsApi, crossApi } from "../api/client";
+import { dailyLogsApi, tasksApi, employeesApi, divisionsApi, subDivisionsApi, crossApi } from "../api/client";
 import {
   formatMoney, formatNumber, formatDate, taskTypeLabel, calcEngine,
   todayISO, initials, hasRole,
@@ -23,6 +23,8 @@ export default function DailyLogsPage() {
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState(todayISO());
   const [filterDiv, setFilterDiv] = useState(user.homeDivisionId || "");
+  const [subDivisions, setSubDivisions] = useState([]);
+  const [filterSubDiv, setFilterSubDiv] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
@@ -35,6 +37,7 @@ export default function DailyLogsPage() {
       const params = {};
       if (filterDate) params.date = filterDate;
       if (filterDiv) params.divisionId = filterDiv;
+      if (filterSubDiv) params.subDivisionId = filterSubDiv;
       // Cross-assignments INTO the filtered division on the filtered date tell
       // us which employees are temporarily rostered there that day.
       const crossParams = {};
@@ -59,7 +62,15 @@ export default function DailyLogsPage() {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [filterDate, filterDiv]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [filterDate, filterDiv, filterSubDiv]);
+
+  // Sub-division options depend on the chosen division filter; reset when it changes.
+  useEffect(() => {
+    setFilterSubDiv("");
+    if (!filterDiv) { setSubDivisions([]); return; }
+    subDivisionsApi.list(filterDiv).then(setSubDivisions).catch(() => setSubDivisions([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterDiv]);
 
   const empName = (id) => employees.find((e) => e.id === id)?.name || `#${id}`;
   const divName = (id) => divisions.find((d) => d.id === id)?.name || "—";
@@ -96,6 +107,15 @@ export default function DailyLogsPage() {
               {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
+          {filterDiv && (
+            <div>
+              <label>Sub-division</label>
+              <select value={filterSubDiv} onChange={(e) => setFilterSubDiv(e.target.value)} style={{ width: "auto" }}>
+                <option value="">All sub-divisions</option>
+                {subDivisions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
           <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
         </div>
       </Card>
@@ -268,14 +288,22 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
     return { ...calcEngine(selectedTask, Number(totalOutput), workers), count: workers };
   }, [selectedTask, isType1, entries, totalOutput, participantIds]);
 
+  // When the selected task is scoped to a sub-division (e.g. "Birds Unloading"
+  // within Ganewaththa), only that sub-division's own staff are valid
+  // participants — a cross-assigned worker is still let in regardless, since
+  // cross-assignments are tracked at the division level, not sub-division.
+  const taskSubDivisionId = selectedTask?.sub_division_id;
   const validEmployees = useMemo(
     () => employees.filter(
       (e) => e.active !== false && (
-        (!divisionId || Number(e.home_division_id) === Number(divisionId)) ||
+        (
+          (!divisionId || Number(e.home_division_id) === Number(divisionId)) &&
+          (!taskSubDivisionId || Number(e.sub_division_id) === Number(taskSubDivisionId))
+        ) ||
         Object.prototype.hasOwnProperty.call(modalCrossMap, Number(e.id))
       )
     ),
-    [employees, divisionId, modalCrossMap]
+    [employees, divisionId, modalCrossMap, taskSubDivisionId]
   );
 
   const crossFromName = (empId) => {
