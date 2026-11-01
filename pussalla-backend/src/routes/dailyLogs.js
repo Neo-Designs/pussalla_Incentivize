@@ -185,8 +185,8 @@ router.put("/:id", requireAuth, requireRole("supervisor"), async (req, res) => {
     );
 
     const { rows: todayRows } = await client.query("SELECT CURRENT_DATE AS today");
-    const today = todayRows[0].today.toISOString().slice(0, 10);
-    const logDate = before.log_date.toISOString().slice(0, 10);
+    const today = String(todayRows[0].today).slice(0, 10);
+    const logDate = String(before.log_date).slice(0, 10);
     const flagged = logDate !== today;
 
     await writeAudit(client, {

@@ -496,8 +496,8 @@ router.get("/payslip.pdf", requireAuth, async (req, res) => {
 
   sendPayslipPdf(res, {
     company: "Incentivize",
-    employeeCode: rows[0]?.code || String(employeeId),
-    employeeName: rows[0]?.name || "Employee",
+    employeeCode: rows[0]?.emp_code || String(employeeId),
+    employeeName: rows[0]?.emp_name || "Employee",
     divisionName: rows[0]?.division_name || "—",
     month, items, taskBreakdown, grandTotal, dates, gridRows,
   });

@@ -1,6 +1,11 @@
 const fs = require("fs");
 const path = require("path");
-const { Pool } = require("pg");
+const { Pool, types } = require("pg");
+
+// Return DATE columns as plain "YYYY-MM-DD" strings. Without this, node-pg
+// builds a JS Date at *local* midnight, so on a server/PC in Sri Lanka time
+// (UTC+5:30) a 1 Sep log serialises as 31 Aug and lands on the wrong day.
+types.setTypeParser(1082, (v) => v);
 require("dotenv").config();
 
 const pool = new Pool(
