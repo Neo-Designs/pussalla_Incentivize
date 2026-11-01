@@ -11,7 +11,8 @@ const router = express.Router();
 const VALID_ROLES = ["employee", "supervisor", "hr", "admin"];
 
 // GET /api/employees?page=1&limit=50&q=&role=&divisionId=&subDivisionId=&active=
-router.get("/", requireAuth, async (req, res) => {
+// Staff roster: supervisors need it for the daily-log checklist; plain employees do not.
+router.get("/", requireAuth, requireRole("supervisor", "hr", "admin", "super_admin"), async (req, res) => {
   const { page, limit, offset } = parsePagination(req);
   const { q, role, divisionId, subDivisionId, active } = req.query;
 

@@ -9,7 +9,7 @@ const DEMO_LOGINS = [
   { code: "EMP-002", role: "HR" },
   { code: "EMP-003", role: "Admin" },
   { code: "EMP-004", role: "Supervisor" },
-  { code: "EMP-009", role: "Employee" },
+  { code: "101327", role: "Employee" },
 ];
 
 export default function LoginPage() {
