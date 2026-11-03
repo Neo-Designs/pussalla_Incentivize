@@ -268,7 +268,7 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
     if (editTarget) {
       return {
         task_type: editTarget.task_type, rate: editTarget.rate_snapshot, base_limit: editTarget.base_limit_snapshot,
-        unit: editTarget.unit, name: editTarget.task_name,
+        unit: editTarget.unit, name: editTarget.task_name, sub_division_id: editTarget.sub_division_id,
       };
     }
     return tasks.find((t) => t.id === Number(taskId));
@@ -324,10 +324,11 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
           (!divisionId || Number(e.home_division_id) === Number(divisionId)) &&
           (showOthers || !taskSubDivisionId || Number(e.sub_division_id) === Number(taskSubDivisionId))
         ) ||
+        participantIds.includes(Number(e.id)) ||
         Object.prototype.hasOwnProperty.call(modalCrossMap, Number(e.id))
       )
     ),
-    [employees, divisionId, modalCrossMap, taskSubDivisionId, showOthers]
+    [employees, divisionId, modalCrossMap, taskSubDivisionId, showOthers, participantIds]
   );
   // Checklist after the search box; the task's own sub-division is listed first.
   const checklistEmployees = useMemo(() => {
@@ -389,12 +390,21 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
     }
   };
 
-  // Edit flow: PUT only updates totalOutput.
+  // Edit flow: change the units and/or who took part; shares are recalculated.
   const submitEdit = async () => {
-    if (totalOutput == null || totalOutput === "") { toast.error("Total output is required"); return; }
+    const payload = {};
+    if (!isType4) {
+      const out = isType1 ? entries[0]?.output : totalOutput;
+      if (out == null || out === "") { toast.error("Total output is required"); return; }
+      payload.totalOutput = Number(out);
+    }
+    if (!isType1) {
+      if (!participantIds.length) { toast.error("Tick at least one person"); return; }
+      payload.participantIds = participantIds;
+    }
     setSaving(true);
     try {
-      await dailyLogsApi.update(editTarget.id, Number(totalOutput));
+      await dailyLogsApi.update(editTarget.id, payload);
       toast.success(editTarget && String(editTarget.log_date).slice(0, 10) !== todayISO()
         ? "Updated — flagged as retroactive edit"
         : "Log updated");
@@ -412,7 +422,7 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
       footer={
         <>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" onClick={isEdit ? submitEdit : submit} disabled={saving || !selectedTask || (isEdit && isType4)}>
+          <button className="btn" onClick={isEdit ? submitEdit : submit} disabled={saving || !selectedTask}>
             {saving ? <><MiniSpinner /> Saving…</> : isEdit ? "Save changes" : "Save log"}
           </button>
         </>
@@ -478,7 +488,6 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
             <div className="muted" style={{ fontSize: "0.85rem", marginTop: "0.3rem" }}>
               {participantIds.length} present × {formatMoney(selectedTask.rate)} = {" "}
               <strong style={{ color: "var(--pussalla-green-700)" }}>{formatMoney(preview.total)}</strong>
-              {isEdit && <> · fixed-rate entries can't be edited — delete and re-log to change who was present.</>}
             </div>
           ) : isType1 ? (
             <div className="muted" style={{ fontSize: "0.85rem", marginTop: "0.3rem" }}>
@@ -492,6 +501,13 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
               <strong style={{ color: "var(--pussalla-gold-700)" }}>{formatMoney(preview.perWorker)}</strong>
             </div>
           )}
+        </div>
+      )}
+
+      {selectedTask && isType1 && isEdit && (
+        <div style={{ marginTop: "0.9rem" }}>
+          <label>Output ({selectedTask.unit})</label>
+          <input type="number" min="0" step="any" value={entries[0]?.output ?? ""} onChange={(e) => setEntry(0, "output", e.target.value)} />
         </div>
       )}
 
@@ -528,7 +544,7 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
               <input type="number" min="0" step="any" value={totalOutput} onChange={(e) => setTotalOutput(e.target.value)} />
             </div>
           )}
-          {!isEdit && (
+          {(
             <div style={{ marginTop: "0.9rem" }}>
               <div className="spread" style={{ marginBottom: "0.3rem", flexWrap: "wrap", gap: "0.4rem" }}>
                 <label style={{ margin: 0 }}>{isType4 ? "Present today" : "Participants"} ({participantIds.length} selected)</label>
@@ -574,7 +590,7 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
               </div>
               {isEdit && selectedTask && (
                 <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.4rem" }}>
-                  {participantIds.length} existing participant(s); editing updates output and redistributes shares.
+                  Tick or untick people and/or change the output — every share is recalculated on save.
                 </p>
               )}
             </div>

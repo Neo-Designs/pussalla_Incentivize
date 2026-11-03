@@ -153,7 +153,8 @@ export const dailyLogsApi = {
   list: (params) => api.get("/api/daily-logs" + qs(params)).then((d) => d.rows ?? d),
   listPage: (params) => api.get("/api/daily-logs" + qs(params)),
   create: (payload) => api.post("/api/daily-logs", payload),
-  update: (id, totalOutput) => api.put(`/api/daily-logs/${id}`, { totalOutput }),
+  // payload: { totalOutput?, participantIds? } (a bare number is treated as totalOutput)
+  update: (id, payload) => api.put(`/api/daily-logs/${id}`, typeof payload === "object" ? payload : { totalOutput: payload }),
   remove: (id) => api.del(`/api/daily-logs/${id}`),
 };
 

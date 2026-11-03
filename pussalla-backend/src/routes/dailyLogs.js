@@ -144,57 +144,90 @@ router.post("/", requireAuth, requireRole("supervisor"), async (req, res) => {
   }
 });
 
-// PUT /api/daily-logs/:id   body: { totalOutput }
-// Recomputes the amount/shares and writes an audit entry. Edits made on a
-// calendar day AFTER the log's own date are automatically flagged for the
-// Super Admin audit dashboard as a possible month-end manipulation.
+// PUT /api/daily-logs/:id   body: { totalOutput?, participantIds? }
+// Change the units (birds / kg / output) and/or who took part, then recompute
+// every share. Type 1 (individual) entries only take a new output; Type 4
+// (fixed daily rate) entries only take a new participant list (the headcount
+// becomes the output). Edits made on a calendar day AFTER the log's own date
+// are flagged for the Super Admin audit dashboard.
 router.put("/:id", requireAuth, requireRole("supervisor"), async (req, res) => {
   const { id } = req.params;
-  const { totalOutput } = req.body;
-  if (totalOutput == null) return res.status(400).json({ error: "totalOutput is required" });
+  const { totalOutput, participantIds } = req.body;
+  if (totalOutput == null && participantIds == null) {
+    return res.status(400).json({ error: "Nothing to update: send totalOutput and/or participantIds" });
+  }
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const { rows: logRows } = await client.query("SELECT * FROM daily_task_logs WHERE id=$1", [id]);
+    const { rows: logRows } = await client.query("SELECT * FROM daily_task_logs WHERE id=$1 FOR UPDATE", [id]);
     const before = logRows[0];
     if (!before) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Not found" }); }
 
-    const { rows: taskRows } = await client.query("SELECT * FROM tasks WHERE id=$1", [before.task_id]);
-    const task = taskRows[0];
-
     const { rows: participantRows } = await client.query(
-      "SELECT employee_id FROM task_participants WHERE daily_task_log_id=$1", [id]
+      "SELECT employee_id FROM task_participants WHERE daily_task_log_id=$1 ORDER BY employee_id", [id]
     );
-    const workerCount = participantRows.length;
-    if (task.task_type === 4) {
+    const beforeIds = participantRows.map((r) => Number(r.employee_id));
+
+    // Calculate with the rate/base limit captured when the entry was made.
+    const { rows: taskRows } = await client.query("SELECT task_type FROM tasks WHERE id=$1", [before.task_id]);
+    const task = {
+      task_type: Number(taskRows[0].task_type),
+      rate: before.rate_snapshot,
+      base_limit: before.base_limit_snapshot,
+    };
+
+    if (task.task_type === 1 && participantIds != null) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: "Type 4 (fixed daily rate) entries have no output to edit. Delete and re-log the entry to change who was present." });
+      return res.status(400).json({ error: "Individual (Type 1) entries belong to one person — delete and re-log to change the employee." });
     }
-    const { total, perWorker } = calcEngine(task, totalOutput, workerCount);
+
+    let nextIds = beforeIds;
+    if (participantIds != null) {
+      if (!Array.isArray(participantIds)) { await client.query("ROLLBACK"); return res.status(400).json({ error: "participantIds must be an array" }); }
+      nextIds = [...new Set(participantIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+      if (!nextIds.length) { await client.query("ROLLBACK"); return res.status(400).json({ error: "At least one participant is required" }); }
+      const { rows: found } = await client.query("SELECT id FROM employees WHERE id = ANY($1::int[])", [nextIds]);
+      if (found.length !== nextIds.length) { await client.query("ROLLBACK"); return res.status(400).json({ error: "One or more selected employees no longer exist" }); }
+    }
+
+    let nextOutput = totalOutput != null ? Number(totalOutput) : Number(before.total_output);
+    if (task.task_type === 4) nextOutput = nextIds.length;
+    if (!Number.isFinite(nextOutput) || nextOutput < 0) { await client.query("ROLLBACK"); return res.status(400).json({ error: "totalOutput must be a number ≥ 0" }); }
+
+    const { total, perWorker } = calcEngine(task, nextOutput, nextIds.length);
 
     const { rows } = await client.query(
       `UPDATE daily_task_logs SET total_output=$1, amount=$2, updated_at=now() WHERE id=$3 RETURNING *`,
-      [totalOutput, total, id]
+      [nextOutput, total, id]
     );
     const after = rows[0];
 
-    await client.query(
-      "UPDATE task_participants SET share_amount=$1 WHERE daily_task_log_id=$2",
-      [perWorker, id]
-    );
+    if (participantIds != null) {
+      await client.query("DELETE FROM task_participants WHERE daily_task_log_id=$1", [id]);
+      await client.query(
+        `INSERT INTO task_participants (daily_task_log_id, employee_id, share_amount)
+         SELECT $1, unnest($2::int[]), $3`,
+        [id, nextIds, perWorker]
+      );
+    } else {
+      await client.query("UPDATE task_participants SET share_amount=$1 WHERE daily_task_log_id=$2", [perWorker, id]);
+    }
 
     const { rows: todayRows } = await client.query("SELECT CURRENT_DATE AS today");
     const today = String(todayRows[0].today).slice(0, 10);
     const logDate = String(before.log_date).slice(0, 10);
     const flagged = logDate !== today;
 
+    const added = nextIds.filter((x) => !beforeIds.includes(x));
+    const removed = beforeIds.filter((x) => !nextIds.includes(x));
     await writeAudit(client, {
       action: "UPDATE", entity: "daily_task_logs", entityId: after.id, divisionId: after.division_id,
       actorId: req.user.id,
-      oldValues: { totalOutput: before.total_output, amount: before.amount },
-      newValues: { totalOutput: after.total_output, amount: after.amount },
-      note: flagged ? "Retroactive edit made after the original log date" : "Same-day correction",
+      oldValues: { totalOutput: before.total_output, amount: before.amount, participantIds: beforeIds },
+      newValues: { totalOutput: after.total_output, amount: after.amount, participantIds: nextIds, added, removed },
+      note: (flagged ? "Retroactive edit made after the original log date" : "Same-day correction")
+        + (added.length || removed.length ? ` (participants +${added.length}/-${removed.length})` : ""),
       flagged,
     });
 
