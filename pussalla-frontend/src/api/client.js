@@ -125,6 +125,18 @@ export const subDivisionsApi = {
 export const employeesApi = {
   list: (params) => api.get("/api/employees" + qs(params)).then((d) => d.rows ?? d),
   listPage: (params) => api.get("/api/employees" + qs(params)),
+  // Every matching employee, fetched in pages of 2000 (the API maximum), so
+  // lists never silently stop at a page limit as more plants are added.
+  listAll: async (params = {}) => {
+    const all = [];
+    for (let page = 1; page <= 100; page++) {
+      const d = await api.get("/api/employees" + qs({ ...params, page, limit: 2000 }));
+      const rows = d.rows ?? d;
+      all.push(...rows);
+      if (!Array.isArray(rows) || rows.length < 2000 || (d.total != null && all.length >= d.total)) break;
+    }
+    return all;
+  },
   create: (payload) => api.post("/api/employees", payload),
   update: (id, payload) => api.put(`/api/employees/${id}`, payload),
   setPassword: (id, password) =>

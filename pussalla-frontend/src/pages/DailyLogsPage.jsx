@@ -47,7 +47,7 @@ export default function DailyLogsPage() {
         divisionsApi.list().catch(() => []),
         // Fetch a large page so cross-assigned employees from every home
         // division are available when the supervisor picks a target division.
-        employeesApi.list({ limit: 500 }).catch(() => []),
+        employeesApi.listAll().catch(() => []),
         dailyLogsApi.list(params).catch(() => []),
         crossApi.list(crossParams).catch(() => []),
       ]);
@@ -151,10 +151,14 @@ export default function DailyLogsPage() {
                     </div>
                   </td>
                   <td>
+                    {user.role === "supervisor" && Number(l.division_id) !== Number(user.homeDivisionId) ? (
+                      <span className="muted" style={{ fontSize: "0.78rem" }}>Other division</span>
+                    ) : (
                     <div className="row" style={{ gap: "0.3rem" }}>
                       <button className="btn btn-ghost btn-sm" onClick={() => { setEditTarget(l); setModalOpen(true); }}>Edit</button>
                       <button className="btn btn-ghost btn-sm" style={{ color: "var(--danger)" }} onClick={() => setConfirmDel(l)}>Delete</button>
                     </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -170,6 +174,7 @@ export default function DailyLogsPage() {
           crossMap={crossMap}
           editTarget={editTarget}
           defaultDivisionId={user.homeDivisionId}
+          lockedDivisionId={user.role === "supervisor" ? user.homeDivisionId : null}
           onSaved={handleSaved}
           onClose={() => { setModalOpen(false); setEditTarget(null); }}
         />
@@ -196,7 +201,8 @@ export default function DailyLogsPage() {
   );
 }
 
-function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivisionId, onSaved, onClose }) {
+function LogEntryModal({ divisions: allDivisions, employees, crossMap, editTarget, defaultDivisionId, lockedDivisionId, onSaved, onClose }) {
+  const divisions = lockedDivisionId ? allDivisions.filter((d) => Number(d.id) === Number(lockedDivisionId)) : allDivisions;
   const toast = useToast();
   const [date, setDate] = useState(editTarget?.log_date || todayISO());
   const [divisionId, setDivisionId] = useState(editTarget?.division_id || defaultDivisionId || "");

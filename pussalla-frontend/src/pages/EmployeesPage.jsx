@@ -37,7 +37,7 @@ export default function EmployeesPage() {
       const [divs, subs, rows] = await Promise.all([
         divisionsApi.list().catch(() => []),
         subDivisionsApi.list().catch(() => []),
-        employeesApi.list({ limit: 1000 }).catch(() => []),
+        employeesApi.listAll().catch(() => []),
       ]);
       setDivisions(divs);
       setSubDivisions(subs);

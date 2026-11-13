@@ -49,12 +49,22 @@ router.get("/", requireAuth, async (req, res) => {
  *   participantIds: [ids]               // Type 4 - fixed rate each, one row
  * }
  */
+
+// Supervisors may only create/edit/delete logs for their own (home) division.
+// Admins and the super admin are unrestricted. Viewing is unchanged.
+function divisionAllowed(user, divisionId) {
+  if (user.role !== "supervisor") return true;
+  return user.homeDivisionId != null && Number(user.homeDivisionId) === Number(divisionId);
+}
+const DIVISION_DENIED = "Supervisors can only record or change logs for their own division.";
+
 router.post("/", requireAuth, requireRole("supervisor"), async (req, res) => {
   const { date, divisionId, taskId, entries } = req.body;
   let { totalOutput, participantIds } = req.body;
   if (!date || !divisionId || !taskId) {
     return res.status(400).json({ error: "date, divisionId and taskId are required" });
   }
+  if (!divisionAllowed(req.user, divisionId)) return res.status(403).json({ error: DIVISION_DENIED });
 
   const client = await pool.connect();
   try {
@@ -62,6 +72,10 @@ router.post("/", requireAuth, requireRole("supervisor"), async (req, res) => {
     const { rows: taskRows } = await client.query("SELECT * FROM tasks WHERE id=$1 AND active=true", [taskId]);
     const task = taskRows[0];
     if (!task) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Task not found" }); }
+    if (Number(task.division_id) !== Number(divisionId)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "That task belongs to a different division." });
+    }
 
     const created = [];
 
@@ -166,6 +180,7 @@ router.put("/:id", requireAuth, requireRole("supervisor"), async (req, res) => {
     const { rows: logRows } = await client.query("SELECT * FROM daily_task_logs WHERE id=$1 FOR UPDATE", [id]);
     const before = logRows[0];
     if (!before) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Not found" }); }
+    if (!divisionAllowed(req.user, before.division_id)) { await client.query("ROLLBACK"); return res.status(403).json({ error: DIVISION_DENIED }); }
 
     const { rows: participantRows } = await client.query(
       "SELECT employee_id FROM task_participants WHERE daily_task_log_id=$1 ORDER BY employee_id", [id]
@@ -267,6 +282,7 @@ router.delete("/:id", requireAuth, requireRole("supervisor"), async (req, res) =
     await client.query("BEGIN");
     const { rows } = await client.query("SELECT * FROM daily_task_logs WHERE id=$1", [id]);
     if (!rows[0]) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Not found" }); }
+    if (!divisionAllowed(req.user, rows[0].division_id)) { await client.query("ROLLBACK"); return res.status(403).json({ error: DIVISION_DENIED }); }
     await client.query("DELETE FROM daily_task_logs WHERE id=$1", [id]);
     await writeAudit(client, {
       action: "DELETE", entity: "daily_task_logs", entityId: Number(id), divisionId: rows[0].division_id,
