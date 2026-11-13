@@ -171,6 +171,8 @@ export const reportsApi = {
   myEarnings: (from, to) => api.get("/api/reports/my-earnings" + qs({ from, to })),
   analytics: (from, to, divisionId, subDivisionId) => api.get("/api/reports/analytics" + qs({ from, to, divisionId, subDivisionId })),
   exportMonthlyCsv: (month) => api.get(`/api/reports/monthly.csv?month=${encodeURIComponent(month)}`),
+  exportMonthlySummaryCsv: (month, divisionId, subDivisionId) =>
+    api.get("/api/reports/monthly-summary.csv" + qs({ month, divisionId, subDivisionId })),
   exportDailyCsv: (date) => api.get(`/api/reports/daily.csv?date=${encodeURIComponent(date)}`),
   tasksReport: (divisionId) => api.get("/api/reports/tasks-report" + qs({ divisionId })),
   exportTasksCsv: (divisionId) => api.get("/api/reports/tasks.csv" + qs({ divisionId })),

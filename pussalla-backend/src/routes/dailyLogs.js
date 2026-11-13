@@ -152,9 +152,12 @@ router.post("/", requireAuth, requireRole("supervisor"), async (req, res) => {
 // are flagged for the Super Admin audit dashboard.
 router.put("/:id", requireAuth, requireRole("supervisor"), async (req, res) => {
   const { id } = req.params;
-  const { totalOutput, participantIds } = req.body;
-  if (totalOutput == null && participantIds == null) {
-    return res.status(400).json({ error: "Nothing to update: send totalOutput and/or participantIds" });
+  const { totalOutput, participantIds, logDate: newDateRaw } = req.body;
+  if (totalOutput == null && participantIds == null && newDateRaw == null) {
+    return res.status(400).json({ error: "Nothing to update: send totalOutput, participantIds and/or logDate" });
+  }
+  if (newDateRaw != null && !/^\d{4}-\d{2}-\d{2}$/.test(String(newDateRaw))) {
+    return res.status(400).json({ error: "logDate must be YYYY-MM-DD" });
   }
 
   const client = await pool.connect();
@@ -195,11 +198,25 @@ router.put("/:id", requireAuth, requireRole("supervisor"), async (req, res) => {
     if (task.task_type === 4) nextOutput = nextIds.length;
     if (!Number.isFinite(nextOutput) || nextOutput < 0) { await client.query("ROLLBACK"); return res.status(400).json({ error: "totalOutput must be a number ≥ 0" }); }
 
+    const nextDate = newDateRaw != null ? String(newDateRaw) : String(before.log_date).slice(0, 10);
+    // Pooled tasks are logged once per task per day: moving onto a day that
+    // already has this task would pay everyone twice.
+    if (task.task_type !== 1 && nextDate !== String(before.log_date).slice(0, 10)) {
+      const { rows: clash } = await client.query(
+        "SELECT id FROM daily_task_logs WHERE task_id=$1 AND log_date=$2 AND id<>$3 LIMIT 1",
+        [before.task_id, nextDate, id]
+      );
+      if (clash[0]) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: `This task is already logged on ${nextDate}. Edit that entry instead.` });
+      }
+    }
+
     const { total, perWorker } = calcEngine(task, nextOutput, nextIds.length);
 
     const { rows } = await client.query(
-      `UPDATE daily_task_logs SET total_output=$1, amount=$2, updated_at=now() WHERE id=$3 RETURNING *`,
-      [nextOutput, total, id]
+      `UPDATE daily_task_logs SET total_output=$1, amount=$2, log_date=$3, updated_at=now() WHERE id=$4 RETURNING *`,
+      [nextOutput, total, nextDate, id]
     );
     const after = rows[0];
 
@@ -224,10 +241,11 @@ router.put("/:id", requireAuth, requireRole("supervisor"), async (req, res) => {
     await writeAudit(client, {
       action: "UPDATE", entity: "daily_task_logs", entityId: after.id, divisionId: after.division_id,
       actorId: req.user.id,
-      oldValues: { totalOutput: before.total_output, amount: before.amount, participantIds: beforeIds },
-      newValues: { totalOutput: after.total_output, amount: after.amount, participantIds: nextIds, added, removed },
+      oldValues: { logDate: String(before.log_date).slice(0, 10), totalOutput: before.total_output, amount: before.amount, participantIds: beforeIds },
+      newValues: { logDate: nextDate, totalOutput: after.total_output, amount: after.amount, participantIds: nextIds, added, removed },
       note: (flagged ? "Retroactive edit made after the original log date" : "Same-day correction")
-        + (added.length || removed.length ? ` (participants +${added.length}/-${removed.length})` : ""),
+        + (added.length || removed.length ? ` (participants +${added.length}/-${removed.length})` : "")
+        + (nextDate !== logDate ? ` (date ${logDate} → ${nextDate})` : ""),
       flagged,
     });
 

@@ -167,6 +167,11 @@ export default function ReportsPage() {
     downloadBlob(blob, `incentivize-monthly-${month}.csv`);
   };
 
+  const exportMonthlySummaryCsv = async () => {
+    const blob = await reportsApi.exportMonthlySummaryCsv(month, divisionFilter || undefined, subDivisionFilter || undefined);
+    downloadBlob(blob, `incentivize-monthly-summary-${month}.csv`);
+  };
+
   const exportTasksCsv = async () => {
     const blob = await reportsApi.exportTasksCsv(divisionFilter || undefined);
     downloadBlob(blob, `incentivize-tasks-report.csv`);
@@ -228,7 +233,10 @@ export default function ReportsPage() {
               <button className="btn btn-gold btn-sm" onClick={exportDailyCsv} disabled={loading}>↓ Export CSV</button>
             )}
             {tab === "monthly" && (
-              <button className="btn btn-gold btn-sm" onClick={exportMonthlyCsv} disabled={loading}>↓ Export CSV</button>
+              <>
+                <button className="btn btn-gold btn-sm" onClick={exportMonthlyCsv} disabled={loading} title="Every task entry, one row per employee per day">↓ Detailed CSV</button>
+                <button className="btn btn-gold btn-sm" onClick={exportMonthlySummaryCsv} disabled={loading} title="One row per employee: total incentive for the month">↓ Per-person summary CSV</button>
+              </>
             )}
             {tab === "tasks" && (
               <button className="btn btn-gold btn-sm" onClick={exportTasksCsv} disabled={tasksReportLoading}>↓ Export Tasks CSV</button>

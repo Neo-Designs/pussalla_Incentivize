@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [earnerDiv, setEarnerDiv] = useState("");   // top-earners division filter
   const [drillDiv, setDrillDiv] = useState(null);    // selected division for drill-down
+  const [drillTask, setDrillTask] = useState(null);  // selected task inside that division
 
   useEffect(() => {
     let active = true;
@@ -55,6 +56,9 @@ export default function DashboardPage() {
 
   const divisionName = (id) => divisions.find((d) => d.id === id)?.name || "—";
   const drillTitle = drillDiv ? "Task payout in " + (drillDiv.name || divisionName(drillDiv.id)) : "Payout by division";
+  const scopeLabel = drillTask ? `${drillTask.name} (${drillDiv?.name || divisionName(drillDiv?.id)})`
+    : drillDiv ? (drillDiv.name || divisionName(drillDiv.id)) : "All divisions";
+  const backToDivisions = () => { setDrillDiv(null); setDrillTask(null); };
 
   // Employee dashboard: personal earnings from today's logs.
   const myTodayTotal = useMemo(() => {
@@ -174,18 +178,25 @@ export default function DashboardPage() {
                     <div className="spread" style={{ marginBottom: "0.8rem" }}>
                       <h3 className="section-title" style={{ margin: 0 }}>{drillTitle}</h3>
                       {drillDiv ? (
-                        <button className="btn btn-ghost btn-sm" onClick={() => setDrillDiv(null)}>Back to divisions</button>
+                        <div className="row" style={{ gap: "0.3rem" }}>
+                          {drillTask && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => setDrillTask(null)}>Whole division</button>
+                          )}
+                          <button className="btn btn-ghost btn-sm" onClick={backToDivisions}>Back to divisions</button>
+                        </div>
                       ) : null}
                     </div>
                     <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0, marginBottom: "0.6rem" }}>
                       {drillDiv
-                        ? "Which task is costing the company the most in this division. Click a bar to switch back."
-                        : "Click a division bar to drill into per-task payout for that division."}
+                        ? (drillTask
+                          ? `Charts below show ${drillTask.name} only. Click another task to switch.`
+                          : "Which task costs the most in this division. Click a task to filter the charts below to it.")
+                        : "Click a division bar to drill into its tasks; the charts below follow your selection."}
                     </p>
                     {drillDiv ? (
                       <DivisionTaskBars
                         tasks={(analytics.divisionTasks || {})[drillDiv.id] || []}
-                        onBack={() => setDrillDiv(null)}
+                        onSelect={(t) => setDrillTask(t && drillTask && t.id === drillTask.id ? null : t)}
                       />
                     ) : (
                       <VerticalBarChart
@@ -200,8 +211,10 @@ export default function DashboardPage() {
               {analytics && (analytics.divisionTrend || []).length > 1 && (
                 <Reveal style={{ marginBottom: "1rem" }}>
                   <Card className="rise">
-                    <h3 className="section-title">Payout trends over time</h3>
-                    <DivisionTrendMultiLine analytics={analytics} divisions={divisions} />
+                    <h3 className="section-title">Payout trends over time — {scopeLabel}</h3>
+                    {drillDiv
+                      ? <ScopedPayoutLine analytics={analytics} drillDiv={drillDiv} drillTask={drillTask} label={scopeLabel} />
+                      : <DivisionTrendMultiLine analytics={analytics} divisions={divisions} />}
                   </Card>
                 </Reveal>
               )}
@@ -209,11 +222,11 @@ export default function DashboardPage() {
               {analytics && (analytics.participationTrend || []).length > 1 && (
                 <Reveal style={{ marginBottom: "1rem" }}>
                   <Card className="rise">
-                    <h3 className="section-title">Employee participation rate</h3>
+                    <h3 className="section-title">Employee participation rate — {scopeLabel}</h3>
                     <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0, marginBottom: "0.6rem" }}>
-                      Distinct employees earning an incentive each day.
+                      Distinct employees earning an incentive each day{drillTask ? " on this task" : drillDiv ? " in this division" : ""}.
                     </p>
-                    <AreaChart data={analytics.participationTrend} valueKey="participants" labelKey="date" />
+                    <ScopedParticipation analytics={analytics} drillDiv={drillDiv} drillTask={drillTask} />
                   </Card>
                 </Reveal>
               )}
@@ -321,16 +334,45 @@ export default function DashboardPage() {
 
 // Vertical bars of per-task payout within the drilled-down division, so the
 // super admin can see which task costs the company the most there.
-function DivisionTaskBars({ tasks, onBack }) {
+function DivisionTaskBars({ tasks, onSelect }) {
   if (!tasks.length) return <EmptyState title="No task data for this division" />;
   const data = tasks.map((t) => ({ id: t.taskId, name: t.task, total: t.total }));
   return (
     <VerticalBarChart
       data={data}
-      onSelect={onBack}
+      onSelect={(d) => onSelect({ id: d.id, name: d.name })}
       color="#7a1e1e"
     />
   );
+}
+
+// Payout over time for the selected division, or for one task in it.
+function ScopedPayoutLine({ analytics, drillDiv, drillTask, label }) {
+  const rows = drillTask
+    ? (analytics.taskTrend || []).filter((r) => Number(r.taskId) === Number(drillTask.id))
+    : (analytics.divisionTrend || []).filter((r) => Number(r.divisionId) === Number(drillDiv.id));
+  if (rows.length < 2) return <EmptyState title="Not enough data for this selection" message="At least two days of logs are needed to draw a trend." />;
+  const byDate = {};
+  for (const r of rows) { const d = String(r.date).slice(0, 10); byDate[d] = (byDate[d] || 0) + Number(r.total); }
+  const dates = Object.keys(byDate).sort();
+  const series = [{ id: "scope", name: label, color: CHART_PALETTE[0], points: dates.map((d) => ({ value: byDate[d] })) }];
+  return <MultiLineChart series={series} dates={dates} />;
+}
+
+// Distinct employees paid per day: all divisions, one division, or one task.
+function ScopedParticipation({ analytics, drillDiv, drillTask }) {
+  let data;
+  if (drillTask) {
+    data = (analytics.taskTrend || []).filter((r) => Number(r.taskId) === Number(drillTask.id))
+      .map((r) => ({ date: r.date, participants: r.participants }));
+  } else if (drillDiv) {
+    data = (analytics.divisionParticipation || []).filter((r) => Number(r.divisionId) === Number(drillDiv.id))
+      .map((r) => ({ date: r.date, participants: r.participants }));
+  } else {
+    data = analytics.participationTrend || [];
+  }
+  if (data.length < 2) return <EmptyState title="Not enough data for this selection" message="At least two days of logs are needed to draw a trend." />;
+  return <AreaChart data={data} valueKey="participants" labelKey="date" />;
 }
 
 // Multiline payout trend: one line per division over time.

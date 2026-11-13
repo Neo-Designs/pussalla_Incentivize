@@ -23,6 +23,8 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filterRole, setFilterRole] = useState("");
+  const [filterDiv, setFilterDiv] = useState("");
+  const [filterSubDiv, setFilterSubDiv] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
@@ -54,8 +56,23 @@ export default function EmployeesPage() {
     const term = q.trim().toLowerCase();
     return employees
       .filter((e) => !filterRole || e.role === filterRole)
+      .filter((e) => !filterDiv || Number(e.home_division_id) === Number(filterDiv))
+      .filter((e) => !filterSubDiv || (filterSubDiv === "none" ? !e.sub_division_id : Number(e.sub_division_id) === Number(filterSubDiv)))
       .filter((e) => !term || e.name.toLowerCase().includes(term) || e.code.toLowerCase().includes(term));
-  }, [employees, q, filterRole]);
+  }, [employees, q, filterRole, filterDiv, filterSubDiv]);
+
+  // Head-count per sub-division (active employees), shown in the filter list.
+  const subDivCounts = useMemo(() => {
+    const m = {};
+    for (const e of employees) if (e.active !== false && e.sub_division_id) m[e.sub_division_id] = (m[e.sub_division_id] || 0) + 1;
+    return m;
+  }, [employees]);
+  const subDivOptions = useMemo(
+    () => subDivisions
+      .filter((s) => !filterDiv || Number(s.division_id) === Number(filterDiv))
+      .slice().sort((a, b) => a.name.localeCompare(b.name)),
+    [subDivisions, filterDiv]
+  );
 
   const canDelete = (emp) => emp.id !== user.id; // don't self-delete
 
@@ -82,6 +99,11 @@ export default function EmployeesPage() {
         <KPI tone="gold" label="Active" value={employees.filter((e) => e.active !== false).length} />
         <KPI tone="blue" label="Supervisors" value={employees.filter((e) => e.role === "supervisor").length} />
         <KPI tone="red" label="Inactive" value={employees.filter((e) => e.active === false).length} />
+        {(filterDiv || filterSubDiv || filterRole || q) && (
+          <KPI tone="green" label="Matching filters"
+            value={filtered.length}
+            sub={`${filtered.filter((e) => e.active !== false).length} active`} />
+        )}
       </div>
 
       <Card style={{ marginBottom: "1rem" }}>
@@ -89,6 +111,21 @@ export default function EmployeesPage() {
           <div style={{ flex: 1, minWidth: 220 }}>
             <label>Search</label>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name or code…" />
+          </div>
+          <div>
+            <label>Division</label>
+            <select value={filterDiv} onChange={(e) => { setFilterDiv(e.target.value); setFilterSubDiv(""); }} style={{ width: "auto" }}>
+              <option value="">All divisions</option>
+              {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label>Sub-division</label>
+            <select value={filterSubDiv} onChange={(e) => setFilterSubDiv(e.target.value)} style={{ width: "auto" }}>
+              <option value="">All sub-divisions</option>
+              {subDivOptions.map((s) => <option key={s.id} value={s.id}>{s.name} ({subDivCounts[s.id] || 0})</option>)}
+              <option value="none">— No sub-division —</option>
+            </select>
           </div>
           <div>
             <label>Role</label>

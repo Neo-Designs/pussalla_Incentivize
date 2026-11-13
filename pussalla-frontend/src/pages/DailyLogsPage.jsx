@@ -402,6 +402,9 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
       if (!participantIds.length) { toast.error("Tick at least one person"); return; }
       payload.participantIds = participantIds;
     }
+    const newDate = String(date).slice(0, 10);
+    if (!newDate) { toast.error("Date is required"); return; }
+    if (newDate !== String(editTarget.log_date).slice(0, 10)) payload.logDate = newDate;
     setSaving(true);
     try {
       await dailyLogsApi.update(editTarget.id, payload);
@@ -431,7 +434,7 @@ function LogEntryModal({ divisions, employees, crossMap, editTarget, defaultDivi
       <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <div>
           <label>Date</label>
-          <input type="date" value={String(date).slice(0, 10)} onChange={(e) => setDate(e.target.value)} disabled={isEdit} />
+          <input type="date" value={String(date).slice(0, 10)} onChange={(e) => setDate(e.target.value)} />
         </div>
         <div>
           <label>Division</label>

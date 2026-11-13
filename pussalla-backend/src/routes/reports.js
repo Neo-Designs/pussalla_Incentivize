@@ -376,6 +376,53 @@ router.get("/monthly.csv", requireAuth, requireRole(...ALLOWED_ROLES), async (re
   sendCsv(res, `incentivize-monthly-${month}.csv`, out);
 });
 
+// GET /api/reports/monthly-summary.csv?month=2026-09&divisionId=&subDivisionId=
+// One row per employee: their total incentive for the month (not daily rows).
+// Active employees in the filtered division/sub-division with no payout are
+// included with 0 so the sheet can be matched against the payroll list.
+router.get("/monthly-summary.csv", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  const { month, divisionId, subDivisionId } = req.query;
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: "month query param is required (YYYY-MM)" });
+  const params = [month];
+  const empFilter = [];
+  if (divisionId) { params.push(divisionId); empFilter.push(`e.home_division_id = $${params.length}`); }
+  if (subDivisionId) { params.push(subDivisionId); empFilter.push(`e.sub_division_id = $${params.length}`); }
+  const empWhere = empFilter.length ? `AND ${empFilter.join(" AND ")}` : "";
+  const { rows } = await pool.query(
+    `WITH pay AS (
+       SELECT p.employee_id,
+              COUNT(DISTINCT l.log_date) AS days_paid,
+              COUNT(*) AS task_entries,
+              STRING_AGG(DISTINCT t.name, '; ') AS tasks,
+              SUM(p.share_amount) AS total
+       FROM task_participants p
+       JOIN daily_task_logs l ON l.id = p.daily_task_log_id
+       JOIN tasks t ON t.id = l.task_id
+       WHERE to_char(l.log_date, 'YYYY-MM') = $1
+       GROUP BY p.employee_id
+     )
+     SELECT e.code, e.name, d.name AS division_name, s.name AS sub_division_name, e.active,
+            COALESCE(pay.days_paid, 0) AS days_paid, COALESCE(pay.task_entries, 0) AS task_entries,
+            COALESCE(pay.tasks, '') AS tasks, COALESCE(pay.total, 0) AS total
+     FROM employees e
+     LEFT JOIN pay ON pay.employee_id = e.id
+     LEFT JOIN divisions d ON d.id = e.home_division_id
+     LEFT JOIN sub_divisions s ON s.id = e.sub_division_id
+     WHERE (pay.employee_id IS NOT NULL OR (e.active AND e.role = 'employee')) ${empWhere}
+     ORDER BY d.name NULLS LAST, s.name NULLS LAST, e.code`,
+    params
+  );
+  const out = [["Employee Code", "Name", "Division", "Sub-division", "Status", "Days Paid", "Task Entries", "Tasks", "Monthly Incentive (Rs)"]];
+  let grand = 0;
+  rows.forEach((r) => {
+    grand += Number(r.total);
+    out.push([r.code, r.name, r.division_name || "", r.sub_division_name || "", r.active ? "Active" : "Inactive",
+      Number(r.days_paid), Number(r.task_entries), r.tasks, Number(r.total).toFixed(2)]);
+  });
+  out.push(["", "TOTAL", "", "", "", "", "", `${rows.length} employees`, grand.toFixed(2)]);
+  sendCsv(res, `incentivize-monthly-summary-${month}.csv`, out);
+});
+
 // GET /api/reports/tasks-report?divisionId=
 router.get("/tasks-report", requireAuth, requireRole(...ALLOWED_ROLES), async (req, res) => {
   const { divisionId } = req.query;
@@ -565,6 +612,7 @@ router.get("/analytics", requireAuth, requireRole("admin", "super_admin"), async
   const [
     totals, divTotals, topEarners, trend, flagged, counts,
     divisionTasks, divisionTrend, participationTrend, editsTrend, earnerSeries,
+    divisionParticipation, taskTrend,
   ] = await Promise.all([
     pool.query(
       `SELECT COUNT(DISTINCT l.id) AS log_count,
@@ -649,6 +697,25 @@ router.get("/analytics", requireAuth, requireRole("admin", "super_admin"), async
        GROUP BY p.employee_id, l.log_date ORDER BY p.employee_id, l.log_date`,
       dp
     ),
+    // Distinct participants per day per division (participation chart when a division is selected).
+    pool.query(
+      `SELECT l.log_date AS date, l.division_id, COUNT(DISTINCT p.employee_id) AS participants
+       FROM task_participants p
+       JOIN daily_task_logs l ON l.id = p.daily_task_log_id
+       ${where}
+       GROUP BY l.log_date, l.division_id ORDER BY l.log_date`,
+      dp
+    ),
+    // Daily payout and participants per task (charts when a task is selected).
+    pool.query(
+      `SELECT l.log_date AS date, l.division_id, l.task_id,
+              COUNT(DISTINCT p.employee_id) AS participants
+       FROM daily_task_logs l
+       LEFT JOIN task_participants p ON p.daily_task_log_id = l.id
+       ${where}
+       GROUP BY l.log_date, l.division_id, l.task_id ORDER BY l.log_date`,
+      dp
+    ),
   ]);
 
   // Fold earner daily series onto the top-earner list.
@@ -657,6 +724,14 @@ router.get("/analytics", requireAuth, requireRole("admin", "super_admin"), async
     const id = r.employee_id;
     (seriesById[id] = seriesById[id] || []).push({ date: r.date, amount: Number(r.amount) });
   }
+
+  // Exact daily payout per task (summed per log, not per participant row).
+  const { rows: taskPayRows } = await pool.query(
+    `SELECT l.log_date AS date, l.task_id, SUM(l.amount) AS total FROM daily_task_logs l ${where}
+     GROUP BY l.log_date, l.task_id`, dp
+  );
+  const taskPayout = {};
+  for (const r of taskPayRows) taskPayout[`${String(r.date).slice(0, 10)}|${r.task_id}`] = Number(r.total);
 
   // Group divisionTasks by division for easy drill-down.
   const divisionTasksMap = {};
@@ -681,6 +756,12 @@ router.get("/analytics", requireAuth, requireRole("admin", "super_admin"), async
     dailyTrend: trend.rows.map((r) => ({ date: r.date, logCount: Number(r.log_count), total: Number(r.total) })),
     divisionTrend: divisionTrend.rows.map((r) => ({ date: r.date, divisionId: r.division_id, total: Number(r.total) })),
     participationTrend: participationTrend.rows.map((r) => ({ date: r.date, participants: Number(r.participants) })),
+    divisionParticipation: divisionParticipation.rows.map((r) => ({ date: r.date, divisionId: r.division_id, participants: Number(r.participants) })),
+    taskTrend: taskTrend.rows.map((r) => ({
+      date: r.date, divisionId: r.division_id, taskId: r.task_id,
+      total: Number((taskPayout[`${String(r.date).slice(0, 10)}|${r.task_id}`]) || 0),
+      participants: Number(r.participants),
+    })),
     editsTrend: editsTrend.rows.map((r) => ({ date: r.date, action: r.action, count: Number(r.count) })),
     flaggedEdits: flagged.rows[0].flagged_count,
     activeEmployees: counts.rows[0].active_employees,
